@@ -4,6 +4,12 @@
 @read_mode_str = private constant [2 x i8] c"r\00"
 @fmt_i32_str = private constant [4 x i8] c"%d\0A\00"
 @lf_str = private constant [2 x i8] c"\0A\00"
+@equals_sign = private constant i8 61 ; '='
+
+@dbg_lex_kwrd_str = private constant [28 x i8] c"Keyword found at index: %d\0A\00"
+@dbg_tokens_len_str = private constant [19 x i8] c"Tokens length: %d\0A\00"
+
+@keyword_fn_str = private constant [3 x i8] c"fn "
 
 ; @TokenTypeKeyword ...TODO
 
@@ -20,29 +26,29 @@
 ;     i32 subtype
 ; }
 
-@TokenSize = private constant i32 8
+@token_size = private constant i32 8
 
-@TokenTypeInvalid = private constant i8 0 ; Invalid, possibly uninitialised token
-@TokenTypeKeyword = private constant i8 1 ; fn, goto, goif
-@TokenTypeVerb = private constant i8 2 ; Basically a function call, e.g. dup, eq, _print
-@TokenTypeLiteral = private constant i8 3 ; Literals are pushed onto the stack immediately, e.g. 1, 73.4, "string", :1
-@TokenTypeDeclaration = private constant i8 4 ; A function declaration, including the equals, e.g. main =
+; @TokenTypeInvalid = private constant i8 0 ; Invalid, possibly uninitialised token
+; @TokenTypeKeyword = private constant i8 1 ; fn, goto, goif
+; @TokenTypeVerb = private constant i8 2 ; Basically a function call, e.g. dup, eq, _print
+; @TokenTypeLiteral = private constant i8 3 ; Literals are pushed onto the stack immediately, e.g. 1, 73.4, "string", :1
+; @TokenTypeDeclaration = private constant i8 4 ; A function declaration, including the equals, e.g. main =
 
-@TokenSubtypeKeyword_Fn = private constant i8 0 ; fn
-@TokenSubtypeKeyword_Goto = private constant i8 1 ; goto
-@TokenSubtypeKeyword_Goif = private constant i8 2 ; goif
+; @TokenSubtypeKeyword_Fn = private constant i8 0 ; fn
+; @TokenSubtypeKeyword_Goto = private constant i8 1 ; goto
+; @TokenSubtypeKeyword_Goif = private constant i8 2 ; goif
 
-@TokenSubtypeVerb_CompDef = private constant i8 0 ; Compiler defined function, e.g. _print
-@TokenSubtypeVerb_NativeDef = private constant i8 1 ; Tower defined function
+; @TokenSubtypeVerb_CompDef = private constant i8 0 ; Compiler defined function, e.g. _print
+; @TokenSubtypeVerb_NativeDef = private constant i8 1 ; Tower defined function
 
-@TokenSubtypeLiteral_Str = private constant i8 0
-@TokenSubtypeLiteral_Bool = private constant i8 1
-@TokenSubtypeLiteral_Label = private constant i8 2
-@TokenSubtypeLiteral_I64 = private constant i8 3
-@TokenSubtypeLiteral_F64 = private constant i8 4
+; @TokenSubtypeLiteral_Str = private constant i8 0
+; @TokenSubtypeLiteral_Bool = private constant i8 1
+; @TokenSubtypeLiteral_Label = private constant i8 2
+; @TokenSubtypeLiteral_I64 = private constant i8 3
+; @TokenSubtypeLiteral_F64 = private constant i8 4
 
-@TokenSubtypeDeclaration_CompDef = private constant i8 0 ; Compiler defined function, e.g. _print
-@TokenSubtypeDeclaration_NativeDef = private constant i8 1 ; Tower defined function
+; @TokenSubtypeDeclaration_CompDef = private constant i8 0 ; Compiler defined function, e.g. _print
+; @TokenSubtypeDeclaration_NativeDef = private constant i8 1 ; Tower defined function
 
 define i32 @main(i32 %argc, i8** %argv) {
 	; %str_ptr = getelementptr [14 x i8], [14 x i8]* @str, i32 0, i32 0
@@ -51,11 +57,13 @@ define i32 @main(i32 %argc, i8** %argv) {
 	; %fmt_str_ptr = getelementptr [4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0
 	; %2 = call i32 (i8*, ...) @printf(i8* %fmt_str_ptr, i32 42)
 
-	%filenamePtr = getelementptr inbounds i8*, i8** %argv, i64 1
-	%filename = load i8*, i8** %filenamePtr
+	%filename_ptr = getelementptr inbounds i8*, i8** %argv, i64 1
+	%filename = load i8*, i8** %filename_ptr
 	%puts_ret_1 = call i32 @puts(i8* %filename)
 
-	%file_contents = call i8* @read_file(i8* %filename)
+	%file_contents_len_ptr = alloca i32, i32 4
+	%file_contents = call i8* @read_file(i8* %filename, i32* %file_contents_len_ptr)
+	%file_contents_len = load i32, i32* %file_contents_len_ptr
 
 	; %puts_ret_2 = call i32 @puts(i8* %file_contents)
 
@@ -65,23 +73,25 @@ define i32 @main(i32 %argc, i8** %argv) {
 	; Allocate 4 bytes in which to store the tokens array length, and call the @tokenise function to return the array of tokens along with writing the length to the allocated array
 	%tokens_len_ptr_i8 = call i8* @malloc(i32 4)
 	%tokens_len_ptr = bitcast i8* %tokens_len_ptr_i8 to i32*
-	%nullptr = call i8* @tokenise(i8* %file_contents, i32* %tokens_len_ptr)
+	%tokens = call i8* @tokenise(i8* %file_contents, i32 %file_contents_len, i32* %tokens_len_ptr)
 
 	%tokens_len = load i32, i32* %tokens_len_ptr
-	%fmt_i32_strp = getelementptr [4 x i8], [4 x i8]* @fmt_i32_str, i32 0, i32 0
-	%printf_ret = call i32 (i8*, ...) @printf(i8* %fmt_i32_strp, i32 %tokens_len)
+	%dbg_tokens_len_strp = getelementptr [19 x i8], [19 x i8]* @dbg_tokens_len_str, i32 0, i32 0
+	%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_tokens_len_strp, i32 %tokens_len)
 
+	call void @free(i8* %tokens)
 	call void @free(i8* %file_contents)
 
 	ret i32 0
 }
 
 ; Produce a stream of tokens... TODO Decide how to implement this
-define i8* @tokenise(i8* %code, i32* %tokens_len_ptr) {
+define i8* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 	; TODO: Implement a lexer
+	; TODO: Remember about comments
 
 	entry:
-		%token_size = load i32, i32* @TokenSize
+		%token_size = load i32, i32* @token_size
 		%tokens_len = mul i32 %token_size, 16
 		%tokens = call i8* @malloc(i32 %tokens_len)
 
@@ -93,13 +103,18 @@ define i8* @tokenise(i8* %code, i32* %tokens_len_ptr) {
 		%code_idx_ptr = alloca i32, i32 4
 		store i32 0, i32* %code_idx_ptr
 
-		br label %loop
+		br label %loop-init
 
-	loop:
+	loop-init:
 		; Implement main body of loop - doing the lexing
 		%tokens_idx = load i32, i32* %tokens_idx_ptr
 		%code_idx = load i32, i32* %code_idx_ptr
 
+		%at_end_comp = icmp uge i32 %code_idx, %code_len
+
+		br i1 %at_end_comp, label %exit, label %loop-body
+
+	loop-body:
 		%code_char_ptr = getelementptr i8, i8* %code, i32 %code_idx
 		%code_char = load i8, i8* %code_char_ptr
 
@@ -107,7 +122,39 @@ define i8* @tokenise(i8* %code, i32* %tokens_len_ptr) {
 		; %code_idx_p1 = add i32
 		; %has_u = icmp eq i8 %code_char, 102
 
-		br label %loop
+		%keyword_fn_strp = getelementptr [3 x i8], [3 x i8]* @keyword_fn_str, i32 0, i32 0
+
+		%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 2, i8* %keyword_fn_strp, i32 0, i32 2)
+
+		br i1 %fn_comp, label %kwrd-fn, label %no-matches
+
+	kwrd-fn:
+		; TODO: Check that this is a valid instance of a keyword - Check that it is surrounded by whitespace (need a function like @char_is_any) and
+		; that if it is not a compiler function (starts with an _ (or maybe some other identifier idk)) it has an = and a body, also check that
+		; the function has a valid name
+
+		br label %kwrd-fn-check-ws
+
+	kwrd-fn-check-ws:
+		; Print "Keyword found at index: %i" (where obviously the %i is the index)
+		%dbg_lex_kwrd_strp = getelementptr [28 x i8], [28 x i8]* @dbg_lex_kwrd_str, i32 0, i32 0
+		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_kwrd_strp, i32 %code_idx)
+
+		; Doesn't (yet) take into account there may be compiler functions
+		; %equals_sign_char = load i8, i8* @equals_sign
+		; %equals_sign_idx = call i32 @str_find(i8* %code, i8 %equals_sign_char, i32 %code_idx, i32 %code_len)
+		; call void @print_span(i8* %code_char_ptr, i32 0, i32 %equals_sign_idx)
+
+		%kwrd_new_code_idx = add i32 %code_idx, 3
+		store i32 %kwrd_new_code_idx, i32* %code_idx_ptr
+
+		br label %loop-init
+
+	no-matches:
+		%default_new_code_idx = add i32 %code_idx, 1
+		store i32 %default_new_code_idx, i32* %code_idx_ptr
+
+		br label %loop-init
 
 	exit:
 		store i32 %tokens_len, i32* %tokens_len_ptr
@@ -115,7 +162,7 @@ define i8* @tokenise(i8* %code, i32* %tokens_len_ptr) {
 }
 
 ; Opens and reads the file at filename into a buffer of the file size on the heap
-define i8* @read_file(i8* %filename) {
+define i8* @read_file(i8* %filename, i32* %flen_ptr) {
 	; Open the file
 	%read_mode_strp = getelementptr [2 x i8], [2 x i8]* @read_mode_str, i32 0, i32 0
 	%file = call i8* @fopen(i8* %filename, i8* %read_mode_strp)
@@ -135,6 +182,10 @@ define i8* @read_file(i8* %filename) {
 	; Close the file
 	%fclose_ret = call i32 @fclose(i8* %file)
 
+	; Write the file length to the i32 value pointed to by the argument %flen_ptr
+	store i32 %flen, i32* %flen_ptr
+
+	; Return the file contents
 	ret i8* %buf_ptr
 }
 
@@ -150,10 +201,9 @@ define i1 @str_eq(i8* %str0, i32 %str0_start, i32 %str0_end, i8* %str1, i32 %str
 
 	loop:
 		; i is 0 if we've just entered the loop, or the next_i if we're already in the loop
-		%i = phi i32 [ 0, %entry ], [ %next_i, %loop ]
-		%next_i = add i32 %i, 1
+		%i = phi i32 [ 0, %entry ], [ %next_i, %continue ]
 
-		; Compute indicies and then pointers to each character
+		; Compute indicies and then pointers to each character, and then dereference them to get the character
 		%str0_idx = add i32 %str0_start, %i
 		%str0_char_ptr = getelementptr i8, i8* %str0, i32 %str0_idx
 		%char0 = load i8, i8* %str0_char_ptr
@@ -162,24 +212,81 @@ define i1 @str_eq(i8* %str0, i32 %str0_start, i32 %str0_end, i8* %str1, i32 %str
 		%str1_char_ptr = getelementptr i8, i8* %str1, i32 %str1_idx
 		%char1 = load i8, i8* %str1_char_ptr
 
+		; Compare the two characters
 		%char_comp = icmp eq i8 %char0, %char1
 
+		; If the characters are equal, jump to %continue - otherwise, jump to %exit-uneq and return with 0 (false)
+		br i1 %char_comp, label %continue, label %exit-uneq
+
+	continue:
+		%next_i = add i32 %i, 1
+
+		; Compare the current string index and the end of the string
 		%at_end_comp = icmp eq i32 %str0_idx, %str0_end
 
-		; Obviously delete this once done branching logic
-		br label %loop
+		; If the current string index is equal to the index past the end of the string, then go to %exit-eq and return with 1 (true) otherwise jump back to %loop
+		br i1 %at_end_comp, label %exit-eq, label %loop
 
-		; TODO: combine %char_comp and %at_end_comp in some way to produce an integer value and then use the switch instruction to branch
-
-	exit-uneq: ; TODO: Figure out what the values of true and false are
+	exit-uneq: ; Return false
 		ret i1 0
 
-	exit-eq:
+	exit-eq: ; Return true
 		ret i1 1
 }
 
-declare i32 @puts(i8*) ; string
-declare i32 @printf(i8*, ...) ; format string, ...arguments
+define i32 @str_find(i8* %str, i8 %seek_char, i32 %start, i32 %end) {
+	entry:
+		br label %loop
+
+	loop:
+		; If coming from entry, set %i to %start, if coming from %continue, set it to %next_i (i + 1)
+		%i = phi i32 [ %start, %entry ], [ %next_i, %continue ]
+
+		; Get a pointer to the current character in %str and dereference it to get the character value
+		%curr_char_ptr = getelementptr i8, i8* %str, i32 %i
+		%curr_char = load i8, i8* %curr_char_ptr
+
+		; Compare the character with the sought character
+		%char_comp = icmp eq i8 %curr_char, %seek_char
+
+		; If the current character is equal to the one we're looking for, then jump to %exit, otherwise jump to %continue
+		br i1 %char_comp, label %exit, label %continue
+
+	continue:
+		; i + 1
+		%next_i = add i32 %i, 1
+
+		; Check if we're at the end of the string
+		%at_end_comp = icmp eq i32 %i, %end
+
+		; If so then
+		br i1 %at_end_comp, label %exit, label %loop
+
+	exit:
+		%ret_i = phi i32 [ %i, %loop ], [ -1, %continue ]
+		ret i32 %ret_i
+}
+
+define void @print_span(i8* %src_str, i32 %start, i32 %end) { ; Prints a section of a mutable string by inserting a null value at %end and calling printf
+	; Get pointer to start of string
+	%str_ptr = getelementptr i8, i8* %src_str, i32 %start
+
+	; Insert a null character at the end of the substring, saving the previous character
+	%str_end_ptr = getelementptr i8, i8* %src_str, i32 %end
+	%char_end = load i8, i8* %str_end_ptr
+	store i8 0, i8* %str_end_ptr
+
+	; Print the substring
+	%printf_ret = call i32 (i8*, ...) @printf(i8* %str_ptr)
+
+	; Restore the end character to what it was before
+	store i8 %char_end, i8* %str_end_ptr
+
+	ret void
+}
+
+declare i32 @puts(i8*) ; string -> error code
+declare i32 @printf(i8*, ...) ; format string, ...arguments -> error code
 declare i8* @fopen(i8*, i8*) ; filename, mode -> FILE
 declare i32 @fseek(i8*, i32, i32) ; FILE, offset, origin (0 = start of file, 1 = current position in file, 2 = end of file) -> error code
 declare i32 @ftell(i8*) ; FILE -> pos of FILE pointer
