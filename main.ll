@@ -90,7 +90,12 @@ define i8* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 	; TODO: Implement a lexer
 	; TODO: Remember about comments
 
+	; TODO: Need to write some documentation about tower and it's syntax
+
 	entry:
+		; Read the size of a single token from the global variable @token_size, then multiply that by 16 and allocate the result of that number of bytes
+		; on the heap to store tokens
+		; May have to rework this, still haven't figured out how exactly I am gonna store the tokens
 		%token_size = load i32, i32* @token_size
 		%tokens_len = mul i32 %token_size, 16
 		%tokens = call i8* @malloc(i32 %tokens_len)
@@ -106,26 +111,26 @@ define i8* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		br label %loop-init
 
 	loop-init:
-		; Implement main body of loop - doing the lexing
+		; Load the current token index and current code character index from the respective pointers
 		%tokens_idx = load i32, i32* %tokens_idx_ptr
 		%code_idx = load i32, i32* %code_idx_ptr
 
+		; Check whether we are at the end of the code by comparing: %code_idx >= %code_len
 		%at_end_comp = icmp uge i32 %code_idx, %code_len
 
+		; If we are at the end of the code, then exit, or go to %loop-body
 		br i1 %at_end_comp, label %exit, label %loop-body
 
 	loop-body:
+		; Get a pointer to the current code character and dereference it to get it's value
 		%code_char_ptr = getelementptr i8, i8* %code, i32 %code_idx
-		%code_char = load i8, i8* %code_char_ptr
+		; %code_char = load i8, i8* %code_char_ptr ; idk if this is needed
 
-		; %has_f = icmp eq i8 %code_char, 102
-		; %code_idx_p1 = add i32
-		; %has_u = icmp eq i8 %code_char, 102
-
+		; Check for the presence of the "fn" keyword
 		%keyword_fn_strp = getelementptr [3 x i8], [3 x i8]* @keyword_fn_str, i32 0, i32 0
-
 		%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 2, i8* %keyword_fn_strp, i32 0, i32 2)
 
+		; If "fn" is found at the current code index, then go to the %kwrd-fn block to handle it
 		br i1 %fn_comp, label %kwrd-fn, label %no-matches
 
 	kwrd-fn:
@@ -140,23 +145,28 @@ define i8* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%dbg_lex_kwrd_strp = getelementptr [28 x i8], [28 x i8]* @dbg_lex_kwrd_str, i32 0, i32 0
 		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_kwrd_strp, i32 %code_idx)
 
-		; Doesn't (yet) take into account there may be compiler functions
+		; Doesn't (yet) take into account that there may be compiler functions
 		; %equals_sign_char = load i8, i8* @equals_sign
 		; %equals_sign_idx = call i32 @str_find(i8* %code, i8 %equals_sign_char, i32 %code_idx, i32 %code_len)
 		; call void @print_span(i8* %code_char_ptr, i32 0, i32 %equals_sign_idx)
 
+		; Add to the current code index by 3 to skip the fn keyword
 		%kwrd_new_code_idx = add i32 %code_idx, 3
 		store i32 %kwrd_new_code_idx, i32* %code_idx_ptr
 
+		; Go back to the start of the loop
 		br label %loop-init
 
 	no-matches:
+		; Add to the current code index by 1 to move on
 		%default_new_code_idx = add i32 %code_idx, 1
 		store i32 %default_new_code_idx, i32* %code_idx_ptr
 
+		; Go back to the start of the loop
 		br label %loop-init
 
 	exit:
+		; Write the length of the %tokens array to the %tokens_len_ptr, and then return the %tokens array
 		store i32 %tokens_len, i32* %tokens_len_ptr
 		ret i8* %tokens
 }
@@ -191,6 +201,7 @@ define i8* @read_file(i8* %filename, i32* %flen_ptr) {
 
 define i1 @str_eq(i8* %str0, i32 %str0_start, i32 %str0_end, i8* %str1, i32 %str1_start, i32 %str1_end) {
 	entry:
+		; Check the ranges of the start to end for each string to compare match
 		%str0_range = sub i32 %str0_end, %str0_start
 		%str1_range = sub i32 %str1_end, %str1_start
 
@@ -259,10 +270,12 @@ define i32 @str_find(i8* %str, i8 %seek_char, i32 %start, i32 %end) {
 		; Check if we're at the end of the string
 		%at_end_comp = icmp eq i32 %i, %end
 
-		; If so then
+		; If so then go to %exit, otherwise start back at %loop
 		br i1 %at_end_comp, label %exit, label %loop
 
 	exit:
+		; If we came from %loop, then the return value will be %i since we only come from %loop when we've found a match
+		; Otherwise, we came from continue, indicating we traversed the whole string without finding a match, so return -1
 		%ret_i = phi i32 [ %i, %loop ], [ -1, %continue ]
 		ret i32 %ret_i
 }
@@ -285,6 +298,7 @@ define void @print_span(i8* %src_str, i32 %start, i32 %end) { ; Prints a section
 	ret void
 }
 
+; Forward declarations of used c library functions
 declare i32 @puts(i8*) ; string -> error code
 declare i32 @printf(i8*, ...) ; format string, ...arguments -> error code
 declare i8* @fopen(i8*, i8*) ; filename, mode -> FILE
