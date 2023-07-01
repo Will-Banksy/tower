@@ -3,7 +3,8 @@
 
 @read_mode_str = private constant [2 x i8] c"r\00"
 @fmt_i32_str = private constant [4 x i8] c"%d\0A\00"
-@lf_str = private constant [2 x i8] c"\0A\00"
+@lf_str = private constant [2 x i8] c"\0A\00" ; "\n\0"
+@ws_chars_str = private constant [4 x i8] c"\0A\0D\09\20" ; "\n\r\t "
 @equals_sign = private constant i8 61 ; '='
 
 @dbg_lex_kwrd_str = private constant [28 x i8] c"Keyword found at index: %d\0A\00"
@@ -56,6 +57,8 @@ define i32 @main(i32 %argc, i8** %argv) {
 
 	; %fmt_str_ptr = getelementptr [4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0
 	; %2 = call i32 (i8*, ...) @printf(i8* %fmt_str_ptr, i32 42)
+
+	; TODO: Test the @is_ws function
 
 	%filename_ptr = getelementptr inbounds i8*, i8** %argv, i64 1
 	%filename = load i8*, i8** %filename_ptr
@@ -296,6 +299,51 @@ define void @print_span(i8* %src_str, i32 %start, i32 %end) { ; Prints a section
 	store i8 %char_end, i8* %str_end_ptr
 
 	ret void
+}
+
+define i1 @is_ws(i8 %char) {
+	; Get ws character string
+	%ws_chars_strp = getelementptr [4 x i8], [4 x i8]* @ws_chars_str, i32 0, i32 0
+
+	; Call @char_is_any to compare the given char to the whitespace chars
+	%is_ws_comp = call i1 @char_is_any(i8 %char, i8* %ws_chars_strp, i32 4)
+
+	ret i1 %is_ws_comp
+}
+
+define i1 @char_is_any(i8 %char, i8* %comp_chars, i32 %comp_chars_len) {
+	entry:
+		br label %loop
+
+	loop:
+		; If coming from entry, set %i to %start, if coming from %continue, set it to %next_i (i + 1)
+		%i = phi i32 [ %start, %entry ], [ %next_i, %continue ]
+
+		; Fetch the char at index %i in %comp_chars
+		%curr_comp_char_ptr = getelementptr i8, i8* %comp_chars, i32 %i
+		%curr_comp_char = load i8, i8* %curr_comp_char_ptr
+
+		; Compare the input character with the one in the comp_chars array
+		%char_eq_comp = icmp eq i8 %char, %curr_comp_char
+
+		; If equal, then exit, if not equal, then continue
+		br i1 %char_eq_comp, label %exit, label %continue
+
+	continue:
+		; i + 1
+		%next_i = add i32 %i, 1
+
+		; Check if we're at the end of %comp_chars
+		%at_end_comp = icmp eq i32 %i, %comp_chars_len
+
+		; If so then go to %exit, otherwise start back at %loop
+		br i1 %at_end_comp, label %exit, label %loop
+
+	exit:
+		; If we came from %loop, then the return value will be true (1) since we only come from %loop when we've found a match
+		; Otherwise, we came from continue, indicating we traversed the whole comparison character array without finding a match, so return false (0)
+		%ret_comp = phi i32 [ 1, %loop ], [ 0, %continue ]
+		ret i1 %ret_comp
 }
 
 ; Forward declarations of used c library functions
