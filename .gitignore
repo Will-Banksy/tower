@@ -1,2 +1,4 @@
 *.c
 *.tower
+.vscode
+target

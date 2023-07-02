@@ -1,8 +1,24 @@
 ; @str = private constant [14 x i8] c"Hello, world!\00"
 ; @fmt_str = private constant [4 x i8] c"%i\0A\00"
 
+; Forward declarations of used c library functions
+declare i32 @puts(i8*) ; string -> error code
+declare i32 @printf(i8*, ...) ; format string, ...arguments -> error code
+declare i8* @fopen(i8*, i8*) ; filename, mode -> FILE
+declare i32 @fseek(i8*, i32, i32) ; FILE, offset, origin (0 = start of file, 1 = current position in file, 2 = end of file) -> error code
+declare i32 @ftell(i8*) ; FILE -> pos of FILE pointer
+declare i8* @malloc(i32) ; size -> ptr to allocated memory
+declare void @rewind(i8*) ; FILE
+declare i64 @fread(i8*, i64, i64, i8*) ; write buffer, element size, num elements, FILE -> num read bytes
+declare i32 @fclose(i8*) ; FILE -> error code
+declare void @free(i8*) ; ptr to allocated memory
+declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allocated memory
+
+; Forward declarations of functions from other modules
+
 @read_mode_str = private constant [2 x i8] c"r\00"
-@fmt_i32_str = private constant [4 x i8] c"%d\0A\00"
+@fmt_int_str = private constant [4 x i8] c"%d\0A\00"
+@fmt_uint_str = private constant [4 x i8] c"%u\0A\00"
 @lf_str = private constant [2 x i8] c"\0A\00" ; "\n\0"
 @ws_chars_str = private constant [4 x i8] c"\0A\0D\09\20" ; "\n\r\t "
 @equals_sign = private constant i8 61 ; '='
@@ -28,6 +44,17 @@
 ; }
 
 @token_size = private constant i32 8
+@token_attr_type = private constant i32 0
+@token_attr_subtype = private constant i32 1
+@token_attr_data = private constant i32 2
+
+%Token = type {
+	i32, ; token type (e.g. keyword, verb, literal)
+	i32, ; token subtype
+	i8* ; data
+}
+
+; TODO: Write some member access functions for %Token e.g. @token_get_type()
 
 ; @TokenTypeInvalid = private constant i8 0 ; Invalid, possibly uninitialised token
 ; @TokenTypeKeyword = private constant i8 1 ; fn, goto, goif
@@ -58,8 +85,6 @@ define i32 @main(i32 %argc, i8** %argv) {
 	; %fmt_str_ptr = getelementptr [4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0
 	; %2 = call i32 (i8*, ...) @printf(i8* %fmt_str_ptr, i32 42)
 
-	; TODO: Test the @is_ws function
-
 	%filename_ptr = getelementptr inbounds i8*, i8** %argv, i64 1
 	%filename = load i8*, i8** %filename_ptr
 	%puts_ret_1 = call i32 @puts(i8* %filename)
@@ -76,20 +101,22 @@ define i32 @main(i32 %argc, i8** %argv) {
 	; Allocate 4 bytes in which to store the tokens array length, and call the @tokenise function to return the array of tokens along with writing the length to the allocated array
 	%tokens_len_ptr_i8 = call i8* @malloc(i32 4)
 	%tokens_len_ptr = bitcast i8* %tokens_len_ptr_i8 to i32*
-	%tokens = call i8* @tokenise(i8* %file_contents, i32 %file_contents_len, i32* %tokens_len_ptr)
+	%tokens = call %Token* @tokenise(i8* %file_contents, i32 %file_contents_len, i32* %tokens_len_ptr)
 
 	%tokens_len = load i32, i32* %tokens_len_ptr
 	%dbg_tokens_len_strp = getelementptr [19 x i8], [19 x i8]* @dbg_tokens_len_str, i32 0, i32 0
 	%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_tokens_len_strp, i32 %tokens_len)
 
-	call void @free(i8* %tokens)
+	%tokens_malloc = bitcast %Token* %tokens to i8*
+
+	call void @free(i8* %tokens_malloc)
 	call void @free(i8* %file_contents)
 
 	ret i32 0
 }
 
 ; Produce a stream of tokens... TODO Decide how to implement this
-define i8* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
+define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 	; TODO: Implement a lexer
 	; TODO: Remember about comments
 
@@ -100,8 +127,10 @@ define i8* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		; on the heap to store tokens
 		; May have to rework this, still haven't figured out how exactly I am gonna store the tokens
 		%token_size = load i32, i32* @token_size
-		%tokens_len = mul i32 %token_size, 16
-		%tokens = call i8* @malloc(i32 %tokens_len)
+		%tokens_len = add i32 16, 0
+		%tokens_size = mul i32 %token_size, %tokens_len
+		%tokens_malloc = call i8* @malloc(i32 %tokens_size)
+		%tokens = bitcast i8* %tokens_malloc to %Token*
 
 		; Local variable for storing the index of the current last token in the %tokens array, as if it were a i8*
 		%tokens_idx_ptr = alloca i32, i32 4
@@ -171,7 +200,7 @@ define i8* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 	exit:
 		; Write the length of the %tokens array to the %tokens_len_ptr, and then return the %tokens array
 		store i32 %tokens_len, i32* %tokens_len_ptr
-		ret i8* %tokens
+		ret %Token* %tokens
 }
 
 ; Opens and reads the file at filename into a buffer of the file size on the heap
@@ -317,7 +346,7 @@ define i1 @char_is_any(i8 %char, i8* %comp_chars, i32 %comp_chars_len) {
 
 	loop:
 		; If coming from entry, set %i to %start, if coming from %continue, set it to %next_i (i + 1)
-		%i = phi i32 [ %start, %entry ], [ %next_i, %continue ]
+		%i = phi i32 [ 0, %entry ], [ %next_i, %continue ]
 
 		; Fetch the char at index %i in %comp_chars
 		%curr_comp_char_ptr = getelementptr i8, i8* %comp_chars, i32 %i
@@ -342,19 +371,6 @@ define i1 @char_is_any(i8 %char, i8* %comp_chars, i32 %comp_chars_len) {
 	exit:
 		; If we came from %loop, then the return value will be true (1) since we only come from %loop when we've found a match
 		; Otherwise, we came from continue, indicating we traversed the whole comparison character array without finding a match, so return false (0)
-		%ret_comp = phi i32 [ 1, %loop ], [ 0, %continue ]
+		%ret_comp = phi i1 [ 1, %loop ], [ 0, %continue ]
 		ret i1 %ret_comp
 }
-
-; Forward declarations of used c library functions
-declare i32 @puts(i8*) ; string -> error code
-declare i32 @printf(i8*, ...) ; format string, ...arguments -> error code
-declare i8* @fopen(i8*, i8*) ; filename, mode -> FILE
-declare i32 @fseek(i8*, i32, i32) ; FILE, offset, origin (0 = start of file, 1 = current position in file, 2 = end of file) -> error code
-declare i32 @ftell(i8*) ; FILE -> pos of FILE pointer
-declare i8* @malloc(i32) ; size -> ptr to allocated memory
-declare void @rewind(i8*) ; FILE
-declare i64 @fread(i8*, i64, i64, i8*) ; write buffer, element size, num elements, FILE -> num read bytes
-declare i32 @fclose(i8*) ; FILE -> error code
-declare void @free(i8*) ; ptr to allocated memory
-declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allocated memory
