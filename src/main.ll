@@ -1,6 +1,3 @@
-; @str = private constant [14 x i8] c"Hello, world!\00"
-; @fmt_str = private constant [4 x i8] c"%i\0A\00"
-
 ; Forward declarations of used c library functions
 declare i32 @puts(i8*) ; string -> error code
 declare i32 @printf(i8*, ...) ; format string, ...arguments -> error code
@@ -28,20 +25,12 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 
 @keyword_fn_str = private constant [2 x i8] c"fn"
 
-; @TokenTypeKeyword ...TODO
-
 ; TODO: Also decide how conditionals are going to work in tower - we want it simplistic as possible ideally but we might need some more keywords
 ; Also do I allow overloading or not?
 ; A way to handle conditionals *and* loops - goto and goif. Have a syntax for declaring labels, and have labels as a value, and then implement conditional goto label (scoped?)
 ;     e.g. 1:1 "loop" print goto
 ;          1 1 eq :1 goif "1 != 1" print 1:
 ; I might scrap the what factor calls "stack effect declarations" cause I'd need a good way to represent it when it might be conditional etc.
-
-; Token struct
-; Token {
-;     i32 type,
-;     i32 subtype
-; }
 
 @token_size = private constant i32 8
 @token_attr_type = private constant i32 0
@@ -128,72 +117,44 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 
 ; End
 
-; TODO: Write some member access functions for %Token e.g. @token_get_type() ... ??? Is this actually any better or easier?
-
-; @TokenTypeInvalid = private constant i8 0 ; Invalid, possibly uninitialised token
-; @TokenTypeKeyword = private constant i8 1 ; fn, goto, goif
-; @TokenTypeVerb = private constant i8 2 ; Basically a function call, e.g. dup, eq, _print
-; @TokenTypeLiteral = private constant i8 3 ; Literals are pushed onto the stack immediately, e.g. 1, 73.4, "string", :1
-; @TokenTypeDeclaration = private constant i8 4 ; A function declaration, including the equals, e.g. main =
-
-; @TokenSubtypeKeyword_Fn = private constant i8 0 ; fn
-; @TokenSubtypeKeyword_Goto = private constant i8 1 ; goto
-; @TokenSubtypeKeyword_Goif = private constant i8 2 ; goif
-
-; @TokenSubtypeVerb_CompDef = private constant i8 0 ; Compiler defined function, e.g. _print
-; @TokenSubtypeVerb_NativeDef = private constant i8 1 ; Tower defined function
-
-; @TokenSubtypeLiteral_Str = private constant i8 0
-; @TokenSubtypeLiteral_Bool = private constant i8 1
-; @TokenSubtypeLiteral_Label = private constant i8 2
-; @TokenSubtypeLiteral_I64 = private constant i8 3
-; @TokenSubtypeLiteral_F64 = private constant i8 4
-
-; @TokenSubtypeDeclaration_CompDef = private constant i8 0 ; Compiler defined function, e.g. _print
-; @TokenSubtypeDeclaration_NativeDef = private constant i8 1 ; Tower defined function
-
 define i32 @main(i32 %argc, i8** %argv) {
-	; %str_ptr = getelementptr [14 x i8], [14 x i8]* @str, i32 0, i32 0
-	; %1 = call i32 @puts(i8* %str_ptr)
-
-	; %fmt_str_ptr = getelementptr [4 x i8], [4 x i8]* @fmt_str, i32 0, i32 0
-	; %2 = call i32 (i8*, ...) @printf(i8* %fmt_str_ptr, i32 42)
-
-	%filename_ptr = getelementptr inbounds i8*, i8** %argv, i64 1
+	; Read the filename from the first argument of %argv
+	%filename_ptr = getelementptr inbounds i8*, i8** %argv, i32 1
 	%filename = load i8*, i8** %filename_ptr
 	%puts_ret_1 = call i32 @puts(i8* %filename)
 
-	%file_contents_len_ptr = alloca i32, i32 4
+	; Allocate space on the stack to store the file length, then call @read_file with the %filename, and a pointer to the allocated stack
+	; space that the function will write the file length to, which returns a pointer to the read file contents
+	; Then dereference the %file_contents_len_ptr to get the length of the read file contents
+	%file_contents_len_ptr = alloca i32, i32 1
 	%file_contents = call i8* @read_file(i8* %filename, i32* %file_contents_len_ptr)
 	%file_contents_len = load i32, i32* %file_contents_len_ptr
 
 	; %puts_ret_2 = call i32 @puts(i8* %file_contents)
 
-	; %lf_strp = getelementptr [2 x i8], [2 x i8]* @lf_str, i32 0, i32 0
-	; %puts_ret_3 = call i32 @puts(i8* %lf_strp)
-
-	; Allocate 4 bytes in which to store the tokens array length, and call the @tokenise function to return the array of tokens along with writing the length to the allocated array
-	%tokens_len_ptr_i8 = call i8* @malloc(i32 4)
-	%tokens_len_ptr = bitcast i8* %tokens_len_ptr_i8 to i32*
+	; Allocate 4 bytes in which to store the tokens array length, and call the @tokenise function to return the array of tokens
+	; along with writing the length to the allocated space
+	; Dereference the %tokens_len_ptr to get the length of the tokens (how many %Tokens there are)
+	%tokens_len_ptr = alloca i32, i32 1
 	%tokens = call %Token* @tokenise(i8* %file_contents, i32 %file_contents_len, i32* %tokens_len_ptr)
-
 	%tokens_len = load i32, i32* %tokens_len_ptr
+
+	; Print the %tokens_len
 	%dbg_tokens_len_strp = getelementptr [19 x i8], [19 x i8]* @dbg_tokens_len_str, i32 0, i32 0
 	%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_tokens_len_strp, i32 %tokens_len)
 
+	; Free memory allocated with @malloc (casting to a voidptr when necessary)
 	%tokens_malloc = bitcast %Token* %tokens to i8*
-
 	call void @free(i8* %tokens_malloc)
 	call void @free(i8* %file_contents)
 
 	ret i32 0
 }
 
-; Produce a stream of tokens... TODO Decide how to implement this
+; Produce a stream of tokens from tower source code
 define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 	; TODO: Implement a lexer
 	; TODO: Remember about comments
-
 	; TODO: Need to write some documentation about tower and it's syntax
 
 	entry:
@@ -214,6 +175,7 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%code_idx_ptr = alloca i32, i32 4
 		store i32 0, i32* %code_idx_ptr
 
+		; Enter the main lexer loop
 		br label %loop-init
 
 	loop-init:
@@ -239,10 +201,15 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%keyword_fn_strp = getelementptr [2 x i8], [2 x i8]* @keyword_fn_str, i32 0, i32 0
 		%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 1, i8* %keyword_fn_strp, i32 0, i32 1)
 
+		; TODO: Need to check for all sorts of tokens - basically check for the other keywords,
+		; '=' (maybe subject to change?) and literals, and then if a sequence of characters isn't any of those it's probably an identifier
+
 		; If "fn" is found at the current code index, then go to the %kwrd-fn block to handle it
 		br i1 %fn_comp, label %kwrd-fn, label %continue-inc1
 
 	kwrd-fn:
+		; Jump directly into the first stage of checking, then proceed through each stage until perhaps getting to the
+		; finish stage, from which we write to the tokens array and go back to the main loop
 		br label %kwrd-fn-check-ws-before
 
 	kwrd-fn-check-ws-before:
@@ -275,10 +242,11 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		br label %continue
 
 	continue-inc1:
+		; Go to the %continue label
 		br label %continue
 
 	continue:
-		; Define an increment amount for each label we're coming from, which basically means define an increment for each found token
+		; Define an increment amount for each label we're coming from, which basically means define an increment for each found token otherwise 1
 		%inc_amt = phi i32 [ 1, %continue-inc1 ], [ 2, %kwrd-fn-finish ]
 
 		; Check the character at the current code ptr before increasing it
