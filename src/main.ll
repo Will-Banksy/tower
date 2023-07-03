@@ -13,18 +13,6 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 
 ; Forward declarations of functions from other modules
 
-@read_mode_str = private constant [2 x i8] c"r\00"
-@fmt_int_str = private constant [4 x i8] c"%d\0A\00"
-@fmt_uint_str = private constant [4 x i8] c"%u\0A\00"
-@lf_str = private constant [2 x i8] c"\0A\00" ; "\n\0"
-@ws_chars_str = private constant [4 x i8] c"\0A\0D\09\20" ; "\n\r\t "
-@equals_sign = private constant i8 61 ; '='
-
-@dbg_lex_kwrd_str = private constant [28 x i8] c"Keyword found at index: %d\0A\00"
-@dbg_tokens_len_str = private constant [19 x i8] c"Tokens length: %d\0A\00"
-
-@keyword_fn_str = private constant [2 x i8] c"fn"
-
 ; TODO: Also decide how conditionals are going to work in tower - we want it simplistic as possible ideally but we might need some more keywords
 ; Also do I allow overloading or not?
 ; A way to handle conditionals *and* loops - goto and goif. Have a syntax for declaring labels, and have labels as a value, and then implement conditional goto label (scoped?)
@@ -32,7 +20,7 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 ;          1 1 eq :1 goif "1 != 1" print 1:
 ; I might scrap the what factor calls "stack effect declarations" cause I'd need a good way to represent it when it might be conditional etc.
 
-@token_size = private constant i32 8
+@token_size = private constant i32 16
 @token_attr_type = private constant i32 0
 @token_attr_subtype = private constant i32 1
 @token_attr_data = private constant i32 2
@@ -43,17 +31,55 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 	i8* ; data
 }
 
+define %Token @Token.new(i32 %tok_type, i32 %tok_subtype, i8* %tok_data) {
+	%tok_ptr = alloca %Token
+
+	; Write the values passed in as parameters to each field
+	%type_ptr = bitcast %Token* %tok_ptr to i32*
+	store i32 %tok_type, i32* %type_ptr
+	%subtype_ptr = getelementptr inbounds %Token, %Token* %tok_ptr, i32 0, i32 1
+	store i32 %tok_subtype, i32* %subtype_ptr
+	%data_ptr = getelementptr inbounds %Token, %Token* %tok_ptr, i32 0, i32 2
+	store i8* %tok_data, i8** %data_ptr
+
+	; Then dereference and return the %Token
+	%token = load %Token, %Token* %tok_ptr
+	ret %Token %token
+}
+
+define i32 @Token.type(%Token* %tok) {
+	%type_ptr = bitcast %Token* %tok to i32*
+	%type = load i32, i32* %type_ptr
+
+	ret i32 %type
+}
+
+define i32 @Token.subtype(%Token* %tok) {
+	%subtype_ptr = getelementptr inbounds %Token, %Token* %tok, i32 0, i32 1
+	%subtype = load i32, i32* %subtype_ptr
+
+	ret i32 %subtype
+}
+
+define i8* @Token.data(%Token* %tok) {
+	%data_ptr = getelementptr inbounds %Token, %Token* %tok, i32 0, i32 2
+	%data = load i8*, i8** %data_ptr
+
+	ret i8* %data
+}
+
 ; Constant values for token type
-@token_type_keyword = private constant i32 0 ; fn, goto, goif
-@token_type_fndef = private constant i32 1 ; =
+@token_type_none = private constant i32 0 ; none: invalid token
+@token_type_keyword = private constant i32 1 ; fn, goto, goif
 @token_type_literal = private constant i32 2 ; 1, 9.2, "hello", :label
 @token_type_ident = private constant i32 3 ; dup, _print
 @token_type_label = private constant i32 4 ; label:
 
 ; Constant values for token subtype of type keyword
 @token_subtype_keyword_fn = private constant i32 0
-@token_subtype_keyword_goto = private constant i32 1
-@token_subtype_keyword_goif = private constant i32 1
+@token_subtype_keyword_fndef = private constant i32 1 ; =
+@token_subtype_keyword_goto = private constant i32 2
+@token_subtype_keyword_goif = private constant i32 3
 
 ; Type fndef has no subtypes
 
@@ -67,6 +93,18 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 ; Type ident has no subtypes
 ; Type label has no subtypes
 
+@read_mode_cstr = private constant [2 x i8] c"r\00"
+@fmt_int_cstr = private constant [4 x i8] c"%i\0A\00"
+@fmt_uint_cstr = private constant [4 x i8] c"%u\0A\00"
+@lf_cstr = private constant [2 x i8] c"\0A\00" ; "\n\0"
+@ws_chars_str = private constant [4 x i8] c"\0A\0D\09\20" ; "\n\r\t "
+@equals_sign = private constant i8 61 ; '='
+
+@dbg_lex_kwrd_cstr = private constant [28 x i8] c"Keyword found at index: %i\0A\00"
+@dbg_tokens_len_cstr = private constant [19 x i8] c"Tokens length: %i\0A\00"
+@dbg_token_cstr = private constant [43 x i8] c"Token(type = %u, subtype = %u, data = %u)\0A\00"
+
+@keyword_fn_str = private constant [2 x i8] c"fn"
 
 ; Impl %Token
 
@@ -139,8 +177,11 @@ define i32 @main(i32 %argc, i8** %argv) {
 	%tokens = call %Token* @tokenise(i8* %file_contents, i32 %file_contents_len, i32* %tokens_len_ptr)
 	%tokens_len = load i32, i32* %tokens_len_ptr
 
+	; Print out all the found tokens
+	call void @dbg_tokens(%Token* %tokens, i32 %tokens_len)
+
 	; Print the %tokens_len
-	%dbg_tokens_len_strp = getelementptr [19 x i8], [19 x i8]* @dbg_tokens_len_str, i32 0, i32 0
+	%dbg_tokens_len_strp = getelementptr [19 x i8], [19 x i8]* @dbg_tokens_len_cstr, i32 0, i32 0
 	%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_tokens_len_strp, i32 %tokens_len)
 
 	; Free memory allocated with @malloc (casting to a voidptr when necessary)
@@ -175,6 +216,12 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%code_idx_ptr = alloca i32, i32 4
 		store i32 0, i32* %code_idx_ptr
 
+		; Dereference global constants
+		%token_type_keyword = load i32, i32* @token_type_keyword
+		%token_subtype_keyword_fn = load i32, i32* @token_subtype_keyword_fn
+		%token_subtype_keyword_fndef = load i32, i32* @token_subtype_keyword_fndef
+		%dbg_lex_kwrd_cstr = getelementptr [28 x i8], [28 x i8]* @dbg_lex_kwrd_cstr, i32 0, i32 0
+
 		; Enter the main lexer loop
 		br label %loop-init
 
@@ -197,15 +244,28 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%code_char_ptr = getelementptr i8, i8* %code, i32 %code_idx
 		%code_char = load i8, i8* %code_char_ptr
 
+		br label %loop-body-kwrds
+
+	loop-body-kwrds:
+		br label %loop-body-kwrd-fn
+
+	loop-body-kwrd-fn:
 		; Check for the presence of the "fn" keyword
-		%keyword_fn_strp = getelementptr [2 x i8], [2 x i8]* @keyword_fn_str, i32 0, i32 0
-		%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 1, i8* %keyword_fn_strp, i32 0, i32 1)
+		%keyword_fn_str = getelementptr [2 x i8], [2 x i8]* @keyword_fn_str, i32 0, i32 0
+		%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 1, i8* %keyword_fn_str, i32 0, i32 1)
 
 		; TODO: Need to check for all sorts of tokens - basically check for the other keywords,
 		; '=' (maybe subject to change?) and literals, and then if a sequence of characters isn't any of those it's probably an identifier
 
 		; If "fn" is found at the current code index, then go to the %kwrd-fn block to handle it
-		br i1 %fn_comp, label %kwrd-fn, label %continue-inc1
+		br i1 %fn_comp, label %kwrd-fn, label %loop-body-kwrd-fndef
+
+	loop-body-kwrd-fndef:
+		; Compare the current character with 61, the int value for '=', the fndef keyword
+		%fndef_comp = icmp eq i8 %code_char, 61 ; '='
+
+		; If '=', then proceed to %kwrd-fndef, otherwise go to %continue-inc1
+		br i1 %fndef_comp, label %kwrd-fndef, label %continue-inc1
 
 	kwrd-fn:
 		; Jump directly into the first stage of checking, then proceed through each stage until perhaps getting to the
@@ -234,11 +294,39 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		br i1 %after_is_ws_comp, label %kwrd-fn-finish, label %continue-inc1
 
 	kwrd-fn-finish:
-		; Print "Keyword found at index: %i" (where obviously the %i is the index)
-		%dbg_lex_kwrd_strp = getelementptr [28 x i8], [28 x i8]* @dbg_lex_kwrd_str, i32 0, i32 0
-		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_kwrd_strp, i32 %code_idx)
-
 		; Go back to the start of the loop
+		br label %add-token
+
+	kwrd-fndef:
+		br label %kwrd-fndef-finish
+
+	kwrd-fndef-finish:
+		br label %add-token
+
+	add-token:
+		; Define values based on which token is being added
+		%token_type = phi i32 [ %token_type_keyword, %kwrd-fn-finish ],
+		                      [ %token_type_keyword, %kwrd-fndef-finish ]
+
+		%token_subtype = phi i32 [ %token_subtype_keyword_fn, %kwrd-fn-finish ],
+		                         [ %token_subtype_keyword_fndef, %kwrd-fndef-finish ]
+
+		%token_data = phi i8* [ null, %kwrd-fn-finish ],
+		                      [ null, %kwrd-fndef-finish ]
+
+		%code_skip = phi i32 [ 2, %kwrd-fn-finish ],
+		                     [ 1, %kwrd-fndef-finish ]
+
+		; Print "Keyword found at index: %i" (where obviously the %i is the index)
+		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_kwrd_cstr, i32 %code_idx)
+
+		; Create and add a token to the tokens array
+		%new_fn_token = call %Token @Token.new(i32 %token_type, i32 %token_subtype, i8* %token_data)
+		%tokens_ptr = getelementptr %Token, %Token* %tokens, i32 %tokens_idx
+		store %Token %new_fn_token, %Token* %tokens_ptr
+		%postfn_tokens_idx = add i32 %tokens_idx, 1
+		store i32 %postfn_tokens_idx, i32* %tokens_idx_ptr
+
 		br label %continue
 
 	continue-inc1:
@@ -247,7 +335,7 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 
 	continue:
 		; Define an increment amount for each label we're coming from, which basically means define an increment for each found token otherwise 1
-		%inc_amt = phi i32 [ 1, %continue-inc1 ], [ 2, %kwrd-fn-finish ]
+		%inc_amt = phi i32 [ 1, %continue-inc1 ], [ %code_skip, %add-token ]
 
 		; Check the character at the current code ptr before increasing it
 		%atend_curr_is_ws_comp = call i1 @is_ws(i8 %code_char)
@@ -261,14 +349,58 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 
 	exit:
 		; Write the length of the %tokens array to the %tokens_len_ptr, and then return the %tokens array
-		store i32 %tokens_len, i32* %tokens_len_ptr
+		store i32 %tokens_idx, i32* %tokens_len_ptr
 		ret %Token* %tokens
+}
+
+define void @dbg_tokens(%Token* %tokens, i32 %tokens_len) {
+	entry:
+		; May as well just define this here. Avoids repeating the same calculation
+		%dbg_token_cstr = getelementptr [43 x i8], [43 x i8]* @dbg_token_cstr, i32 0, i32 0
+
+		br label %loop-init
+
+	loop-init:
+		; %i and %next_i - Just the variables tracking the current token index, and the next one
+		%i = phi i32 [ 0, %entry ], [ %next_i, %loop-body-2 ]
+		%next_i = add i32 %i, 1
+
+		; If at end of %tokens array, then exit
+		%at_end_comp = icmp eq i32 %i, %tokens_len
+		br i1 %at_end_comp, label %exit, label %loop-body
+
+	loop-body:
+		; Retrieve a reference to the current %Token, and then use the accessor functions to retrieve its fields
+		%tok_ptr = getelementptr %Token, %Token* %tokens, i32 %i
+		%tok_type = call i32 @Token.type(%Token* %tok_ptr)
+		%tok_subtype = call i32 @Token.subtype(%Token* %tok_ptr)
+		%tok_data = call i8* @Token.data(%Token* %tok_ptr)
+
+		; Load the global constant @token_type_none and compare the current token type against it
+		%token_type_none = load i32, i32* @token_type_none
+		%none_comp = icmp eq i32 %tok_type, %token_type_none
+
+		; If the token type is equal to @token_type_none, then exit
+		; TODO: Evaluate this
+		br i1 %none_comp, label %exit, label %loop-body-2
+
+	loop-body-2:
+		; Cast the token data pointer to a number for printing
+		%tok_data_num = ptrtoint i8* %tok_data to i32
+
+		; Print out the retrieved token information
+		%printf_res = call i32 (i8*, ...) @printf(i8* %dbg_token_cstr, i32 %tok_type, i32 %tok_subtype, i32 %tok_data_num)
+
+		br label %loop-init
+
+	exit:
+		ret void
 }
 
 ; Opens and reads the file at filename into a buffer of the file size on the heap
 define i8* @read_file(i8* %filename, i32* %flen_ptr) {
 	; Open the file
-	%read_mode_strp = getelementptr [2 x i8], [2 x i8]* @read_mode_str, i32 0, i32 0
+	%read_mode_strp = getelementptr [2 x i8], [2 x i8]* @read_mode_cstr, i32 0, i32 0
 	%file = call i8* @fopen(i8* %filename, i8* %read_mode_strp)
 
 	; Get the size of the file by seeking to the end, getting the position of the file stream pointer, and then rewinding the fstream ptr to the start
