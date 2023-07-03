@@ -1,4 +1,6 @@
-interp:
+jit: target/build.ll
+	lli $^ main.tower
+
+target/build.ll: src/main.ll
 	@mkdir -p target
-	@find src -name "*.ll" | xargs llvm-link -o target/build.ll
-	lli target/build.ll main.tower
+	llvm-link -o target/build.ll $^

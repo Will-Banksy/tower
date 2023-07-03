@@ -26,7 +26,7 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 @dbg_lex_kwrd_str = private constant [28 x i8] c"Keyword found at index: %d\0A\00"
 @dbg_tokens_len_str = private constant [19 x i8] c"Tokens length: %d\0A\00"
 
-@keyword_fn_str = private constant [3 x i8] c"fn "
+@keyword_fn_str = private constant [2 x i8] c"fn"
 
 ; @TokenTypeKeyword ...TODO
 
@@ -54,7 +54,81 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 	i8* ; data
 }
 
-; TODO: Write some member access functions for %Token e.g. @token_get_type()
+; Constant values for token type
+@token_type_keyword = private constant i32 0 ; fn, goto, goif
+@token_type_fndef = private constant i32 1 ; =
+@token_type_literal = private constant i32 2 ; 1, 9.2, "hello", :label
+@token_type_ident = private constant i32 3 ; dup, _print
+@token_type_label = private constant i32 4 ; label:
+
+; Constant values for token subtype of type keyword
+@token_subtype_keyword_fn = private constant i32 0
+@token_subtype_keyword_goto = private constant i32 1
+@token_subtype_keyword_goif = private constant i32 1
+
+; Type fndef has no subtypes
+
+; Constant values for token subtype of type literal
+@token_subtype_literal_i64 = private constant i32 0
+@token_subtype_literal_f64 = private constant i32 1
+@token_subtype_literal_bool = private constant i32 2
+@token_subtype_literal_str = private constant i32 3
+@token_subtype_literal_label = private constant i32 4
+
+; Type ident has no subtypes
+; Type label has no subtypes
+
+
+; Impl %Token
+
+; define i8* @token_getref_to(%Token* %token, i32 %token_attr_idx) {
+; 	entry:
+; 		switch i32 %token_attr_idx, label %return-null [ i32 0, label %return-ty i32 1, label %return-sty i32 2, label %return-dat ]
+
+; 	return-ty:
+; 		%tok_ty_voidptr = bitcast %Token* %token to i8*
+
+; 		ret i8* %tok_ty_voidptr
+
+; 	return-sty:
+; 		%tok_sty_ptr = getelementptr inbounds %Token, %Token* %token, i32 0, i32 1
+; 		%tok_sty_voidptr = bitcast i32* %tok_sty_ptr to i8*
+
+; 		ret i8* %tok_sty_voidptr
+
+; 	return-dat:
+; 		%tok_dat_ptr = getelementptr inbounds %Token, %Token* %token, i32 0, i32 2
+
+; 		ret i8** %tok_dat_ptr
+
+; 	return-null:
+; 		ret i8* null
+; }
+
+; define i32 @token_get_type(%Token* %token) {
+; 	%tok_ty_ptr = bitcast %Token* %token to i32*
+; 	%tok_ty = load i32, i32* %tok_ty_ptr
+
+; 	ret i32 %tok_ty
+; }
+
+; define i32 @token_get_subtype(%Token* %token) {
+; 	%tok_ty_ptr = getelementptr inbounds %Token, %Token* %token, i32 0, i32 1
+; 	%tok_ty = load i32, i32* %tok_ty_ptr
+
+; 	ret i32 %tok_ty
+; }
+
+; define i8* @token_get_data(%Token* %token) {
+; 	%tok_dat_ptr = getelementptr inbounds %Token, %Token* %token, i32 0, i32 2
+; 	%tok_dat = load i8*, i8** %tok_dat_ptr
+
+; 	ret i8* %tok_dat
+; }
+
+; End
+
+; TODO: Write some member access functions for %Token e.g. @token_get_type() ... ??? Is this actually any better or easier?
 
 ; @TokenTypeInvalid = private constant i8 0 ; Invalid, possibly uninitialised token
 ; @TokenTypeKeyword = private constant i8 1 ; fn, goto, goif
@@ -143,6 +217,9 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		br label %loop-init
 
 	loop-init:
+		; Load whether the previous character was ws or start of file with a phi
+		%prev_is_ws_comp = phi i1 [ 1, %entry ], [ %atend_curr_is_ws_comp, %continue ]
+
 		; Load the current token index and current code character index from the respective pointers
 		%tokens_idx = load i32, i32* %tokens_idx_ptr
 		%code_idx = load i32, i32* %code_idx_ptr
@@ -156,42 +233,59 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 	loop-body:
 		; Get a pointer to the current code character and dereference it to get it's value
 		%code_char_ptr = getelementptr i8, i8* %code, i32 %code_idx
-		; %code_char = load i8, i8* %code_char_ptr ; idk if this is needed
+		%code_char = load i8, i8* %code_char_ptr
 
 		; Check for the presence of the "fn" keyword
-		%keyword_fn_strp = getelementptr [3 x i8], [3 x i8]* @keyword_fn_str, i32 0, i32 0
-		%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 2, i8* %keyword_fn_strp, i32 0, i32 2)
+		%keyword_fn_strp = getelementptr [2 x i8], [2 x i8]* @keyword_fn_str, i32 0, i32 0
+		%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 1, i8* %keyword_fn_strp, i32 0, i32 1)
 
 		; If "fn" is found at the current code index, then go to the %kwrd-fn block to handle it
-		br i1 %fn_comp, label %kwrd-fn, label %no-matches
+		br i1 %fn_comp, label %kwrd-fn, label %continue-inc1
 
 	kwrd-fn:
-		; TODO: Check that this is a valid instance of a keyword - Check that it is surrounded by whitespace (need a function like @char_is_any) and
-		; that if it is not a compiler function (starts with an _ (or maybe some other identifier idk)) it has an = and a body, also check that
-		; the function has a valid name
+		br label %kwrd-fn-check-ws-before
 
-		br label %kwrd-fn-check-ws
+	kwrd-fn-check-ws-before:
+		; If the character after the "fn" is a ws, then go to %kwrd-fn-finish, otherwise go to %continue-inc1
+		br i1 %prev_is_ws_comp, label %kwrd-fn-check-ws-after-endcheck, label %continue-inc1
 
-	kwrd-fn-check-ws:
+	kwrd-fn-check-ws-after-endcheck:
+		; Check that the index after "fn" is not equal to the code length - otherwise the "fn" is at the end of the string
+		%after_idx = add i32 %code_idx, 2
+		%after_isnot_end_comp = icmp ne i32 %after_idx, %code_len
+
+		; If "fn" is at end of string, go to %kwrd-fn-finish, otherwise, check that the next character is ws with %kwrd-fn-check-ws-after
+		br i1 %after_isnot_end_comp, label %kwrd-fn-check-ws-after, label %kwrd-fn-finish
+
+	kwrd-fn-check-ws-after:
+		; Get a pointer to %code_char_ptr + 2 (length of fn keyword)
+		%after_ptr = getelementptr i8, i8* %code_char_ptr, i32 2
+		%after_char = load i8, i8* %after_ptr
+		%after_is_ws_comp = call i1 @is_ws(i8 %after_char)
+
+		; If next character is ws, go to %kwrd-fn-finish, otherwise go to %continue-inc1
+		br i1 %after_is_ws_comp, label %kwrd-fn-finish, label %continue-inc1
+
+	kwrd-fn-finish:
 		; Print "Keyword found at index: %i" (where obviously the %i is the index)
 		%dbg_lex_kwrd_strp = getelementptr [28 x i8], [28 x i8]* @dbg_lex_kwrd_str, i32 0, i32 0
 		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_kwrd_strp, i32 %code_idx)
 
-		; Doesn't (yet) take into account that there may be compiler functions
-		; %equals_sign_char = load i8, i8* @equals_sign
-		; %equals_sign_idx = call i32 @str_find(i8* %code, i8 %equals_sign_char, i32 %code_idx, i32 %code_len)
-		; call void @print_span(i8* %code_char_ptr, i32 0, i32 %equals_sign_idx)
-
-		; Add to the current code index by 3 to skip the fn keyword
-		%kwrd_new_code_idx = add i32 %code_idx, 3
-		store i32 %kwrd_new_code_idx, i32* %code_idx_ptr
-
 		; Go back to the start of the loop
-		br label %loop-init
+		br label %continue
 
-	no-matches:
-		; Add to the current code index by 1 to move on
-		%default_new_code_idx = add i32 %code_idx, 1
+	continue-inc1:
+		br label %continue
+
+	continue:
+		; Define an increment amount for each label we're coming from, which basically means define an increment for each found token
+		%inc_amt = phi i32 [ 1, %continue-inc1 ], [ 2, %kwrd-fn-finish ]
+
+		; Check the character at the current code ptr before increasing it
+		%atend_curr_is_ws_comp = call i1 @is_ws(i8 %code_char)
+
+		; Add to the current code index by whatever to move on
+		%default_new_code_idx = add i32 %code_idx, %inc_amt
 		store i32 %default_new_code_idx, i32* %code_idx_ptr
 
 		; Go back to the start of the loop
