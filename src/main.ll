@@ -19,6 +19,7 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 ;     e.g. 1:1 "loop" print goto
 ;          1 1 eq :1 goif "1 != 1" print 1:
 ; I might scrap the what factor calls "stack effect declarations" cause I'd need a good way to represent it when it might be conditional etc.
+;     But maybe the conditional stuff can just be like "idk" and those functions aren't checked or maybe you can say "idk" to inputs/outputs
 
 @token_size = private constant i32 16
 @token_attr_type = private constant i32 0
@@ -28,10 +29,11 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 %Token = type {
 	i32, ; token type (e.g. keyword, verb, literal)
 	i32, ; token subtype
+	i32, ; data len
 	i8* ; data
 }
 
-define %Token @Token.new(i32 %tok_type, i32 %tok_subtype, i8* %tok_data) {
+define %Token @Token.new(i32 %tok_type, i32 %tok_subtype, i32 %tok_data_len, i8* %tok_data) {
 	%tok_ptr = alloca %Token
 
 	; Write the values passed in as parameters to each field
@@ -39,7 +41,9 @@ define %Token @Token.new(i32 %tok_type, i32 %tok_subtype, i8* %tok_data) {
 	store i32 %tok_type, i32* %type_ptr
 	%subtype_ptr = getelementptr inbounds %Token, %Token* %tok_ptr, i32 0, i32 1
 	store i32 %tok_subtype, i32* %subtype_ptr
-	%data_ptr = getelementptr inbounds %Token, %Token* %tok_ptr, i32 0, i32 2
+	%data_len_ptr = getelementptr inbounds %Token, %Token* %tok_ptr, i32 0, i32 2
+	store i32 %tok_data_len, i32* %data_len_ptr
+	%data_ptr = getelementptr inbounds %Token, %Token* %tok_ptr, i32 0, i32 3
 	store i8* %tok_data, i8** %data_ptr
 
 	; Then dereference and return the %Token
@@ -61,8 +65,15 @@ define i32 @Token.subtype(%Token* %tok) {
 	ret i32 %subtype
 }
 
+define i32 @Token.data_len(%Token* %tok) {
+	%data_len_ptr = getelementptr inbounds %Token, %Token* %tok, i32 0, i32 2
+	%data_len = load i32, i32* %data_len_ptr
+
+	ret i32 %data_len
+}
+
 define i8* @Token.data(%Token* %tok) {
-	%data_ptr = getelementptr inbounds %Token, %Token* %tok, i32 0, i32 2
+	%data_ptr = getelementptr inbounds %Token, %Token* %tok, i32 0, i32 3
 	%data = load i8*, i8** %data_ptr
 
 	ret i8* %data
@@ -105,6 +116,7 @@ define i8* @Token.data(%Token* %tok) {
 @dbg_token_cstr = private constant [43 x i8] c"Token(type = %u, subtype = %u, data = %u)\0A\00"
 
 @keyword_fn_str = private constant [2 x i8] c"fn"
+@keyword_fndef_str = private constant [1 x i8] c"="
 
 ; Impl %Token
 
@@ -250,78 +262,96 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		br label %loop-body-kwrd-fn
 
 	loop-body-kwrd-fn:
-		; Check for the presence of the "fn" keyword
-		%keyword_fn_str = getelementptr [2 x i8], [2 x i8]* @keyword_fn_str, i32 0, i32 0
-		%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 1, i8* %keyword_fn_str, i32 0, i32 1)
+		%kwrd_fn_str = getelementptr [2 x i8], [2 x i8]* @keyword_fn_str, i32 0, i32 0
+		%kwrd_fn_len = add i32 2, 0
+		%kwrd_fn_comp = call i1 @check_keyword(i8* %code, i32 %code_len, i32 %code_idx, i8* %kwrd_fn_str, i32 %kwrd_fn_len)
 
-		; TODO: Need to check for all sorts of tokens - basically check for the other keywords,
-		; '=' (maybe subject to change?) and literals, and then if a sequence of characters isn't any of those it's probably an identifier
-
-		; If "fn" is found at the current code index, then go to the %kwrd-fn block to handle it
-		br i1 %fn_comp, label %kwrd-fn, label %loop-body-kwrd-fndef
+		br i1 %kwrd_fn_comp, label %add-token, label %loop-body-kwrd-fndef
 
 	loop-body-kwrd-fndef:
-		; Compare the current character with 61, the int value for '=', the fndef keyword
-		%fndef_comp = icmp eq i8 %code_char, 61 ; '='
+		%kwrd_fndef_str = getelementptr [1 x i8], [1 x i8]* @keyword_fndef_str, i32 0, i32 0
+		%kwrd_fndef_len = add i32 1, 0
+		%kwrd_fndef_comp = call i1 @check_keyword(i8* %code, i32 %code_len, i32 %code_idx, i8* %kwrd_fndef_str, i32 %kwrd_fndef_len)
 
-		; If '=', then proceed to %kwrd-fndef, otherwise go to %continue-inc1
-		br i1 %fndef_comp, label %kwrd-fndef, label %continue-inc1
+		br i1 %kwrd_fndef_comp, label %add-token, label %continue-inc1
 
-	kwrd-fn:
-		; Jump directly into the first stage of checking, then proceed through each stage until perhaps getting to the
-		; finish stage, from which we write to the tokens array and go back to the main loop
-		br label %kwrd-fn-check-ws-before
+	; loop-body-kwrd-fn:
+	; 	; Check for the presence of the "fn" keyword
+	; 	%keyword_fn_str = getelementptr [2 x i8], [2 x i8]* @keyword_fn_str, i32 0, i32 0
+	; 	%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 1, i8* %keyword_fn_str, i32 0, i32 1)
 
-	kwrd-fn-check-ws-before:
-		; If the character after the "fn" is a ws, then go to %kwrd-fn-finish, otherwise go to %continue-inc1
-		br i1 %prev_is_ws_comp, label %kwrd-fn-check-ws-after-endcheck, label %continue-inc1
+	; 	; TODO: Need to check for all sorts of tokens - basically check for the other keywords,
+	; 	; labels, and literals, and then if a sequence of characters isn't any of those it's probably an identifier
 
-	kwrd-fn-check-ws-after-endcheck:
-		; Check that the index after "fn" is not equal to the code length - otherwise the "fn" is at the end of the string
-		%after_idx = add i32 %code_idx, 2
-		%after_isnot_end_comp = icmp ne i32 %after_idx, %code_len
+	; 	; If "fn" is found at the current code index, then go to the %kwrd-fn block to handle it
+	; 	br i1 %fn_comp, label %kwrd-fn, label %loop-body-kwrd-fndef
 
-		; If "fn" is at end of string, go to %kwrd-fn-finish, otherwise, check that the next character is ws with %kwrd-fn-check-ws-after
-		br i1 %after_isnot_end_comp, label %kwrd-fn-check-ws-after, label %kwrd-fn-finish
+	; loop-body-kwrd-fndef:
+	; 	; Compare the current character with 61, the int value for '=', the fndef keyword
+	; 	%fndef_comp = icmp eq i8 %code_char, 61 ; '='
 
-	kwrd-fn-check-ws-after:
-		; Get a pointer to %code_char_ptr + 2 (length of fn keyword)
-		%after_ptr = getelementptr i8, i8* %code_char_ptr, i32 2
-		%after_char = load i8, i8* %after_ptr
-		%after_is_ws_comp = call i1 @is_ws(i8 %after_char)
+	; 	; If '=', then proceed to %kwrd-fndef, otherwise go to %continue-inc1
+	; 	br i1 %fndef_comp, label %kwrd-fndef, label %continue-inc1
 
-		; If next character is ws, go to %kwrd-fn-finish, otherwise go to %continue-inc1
-		br i1 %after_is_ws_comp, label %kwrd-fn-finish, label %continue-inc1
+	; kwrd-fn:
+	; 	; Jump directly into the first stage of checking, then proceed through each stage until perhaps getting to the
+	; 	; finish stage, from which we write to the tokens array and go back to the main loop
+	; 	br label %kwrd-fn-check-ws-before
 
-	kwrd-fn-finish:
-		; Go back to the start of the loop
-		br label %add-token
+	; kwrd-fn-check-ws-before:
+	; 	; If the character after the "fn" is a ws, then go to %kwrd-fn-finish, otherwise go to %continue-inc1
+	; 	br i1 %prev_is_ws_comp, label %kwrd-fn-check-ws-after-endcheck, label %continue-inc1
 
-	kwrd-fndef:
-		br label %kwrd-fndef-finish
+	; kwrd-fn-check-ws-after-endcheck:
+	; 	; Check that the index after "fn" is not equal to the code length - otherwise the "fn" is at the end of the string
+	; 	%after_idx = add i32 %code_idx, 2
+	; 	%after_isnot_end_comp = icmp ne i32 %after_idx, %code_len
 
-	kwrd-fndef-finish:
-		br label %add-token
+	; 	; If "fn" is at end of string, go to %kwrd-fn-finish, otherwise, check that the next character is ws with %kwrd-fn-check-ws-after
+	; 	br i1 %after_isnot_end_comp, label %kwrd-fn-check-ws-after, label %kwrd-fn-finish
+
+	; kwrd-fn-check-ws-after:
+	; 	; Get a pointer to %code_char_ptr + 2 (length of fn keyword)
+	; 	%after_ptr = getelementptr i8, i8* %code_char_ptr, i32 2
+	; 	%after_char = load i8, i8* %after_ptr
+	; 	%after_is_ws_comp = call i1 @is_ws(i8 %after_char)
+
+	; 	; If next character is ws, go to %kwrd-fn-finish, otherwise go to %continue-inc1
+	; 	br i1 %after_is_ws_comp, label %kwrd-fn-finish, label %continue-inc1
+
+	; kwrd-fn-finish:
+	; 	; Go back to the start of the loop
+	; 	br label %add-token
+
+	; kwrd-fndef:
+	; 	br label %kwrd-fndef-finish
+
+	; kwrd-fndef-finish:
+	; 	br label %add-token
 
 	add-token:
 		; Define values based on which token is being added
-		%token_type = phi i32 [ %token_type_keyword, %kwrd-fn-finish ],
-		                      [ %token_type_keyword, %kwrd-fndef-finish ]
+		%token_type = phi i32 [ %token_type_keyword, %loop-body-kwrd-fn ],
+		                      [ %token_type_keyword, %loop-body-kwrd-fndef ]
 
-		%token_subtype = phi i32 [ %token_subtype_keyword_fn, %kwrd-fn-finish ],
-		                         [ %token_subtype_keyword_fndef, %kwrd-fndef-finish ]
+		%token_subtype = phi i32 [ %token_subtype_keyword_fn, %loop-body-kwrd-fn ],
+		                         [ %token_subtype_keyword_fndef, %loop-body-kwrd-fndef ]
 
-		%token_data = phi i8* [ null, %kwrd-fn-finish ],
-		                      [ null, %kwrd-fndef-finish ]
+		%token_data_len = phi i32 [ 0, %loop-body-kwrd-fn ],
+		                          [ 0, %loop-body-kwrd-fndef ]
 
-		%code_skip = phi i32 [ 2, %kwrd-fn-finish ],
-		                     [ 1, %kwrd-fndef-finish ]
+		%token_data = phi i8* [ null, %loop-body-kwrd-fn ],
+		                      [ null, %loop-body-kwrd-fndef ]
+
+		%code_skip = phi i32 [ 2, %loop-body-kwrd-fn ],
+		                     [ 1, %loop-body-kwrd-fndef ]
 
 		; Print "Keyword found at index: %i" (where obviously the %i is the index)
+		; TODO: Change this. It is not only finding keywords that will execute this line
 		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_kwrd_cstr, i32 %code_idx)
 
 		; Create and add a token to the tokens array
-		%new_fn_token = call %Token @Token.new(i32 %token_type, i32 %token_subtype, i8* %token_data)
+		%new_fn_token = call %Token @Token.new(i32 %token_type, i32 %token_subtype, i32 %token_data_len, i8* %token_data)
 		%tokens_ptr = getelementptr %Token, %Token* %tokens, i32 %tokens_idx
 		store %Token %new_fn_token, %Token* %tokens_ptr
 		%postfn_tokens_idx = add i32 %tokens_idx, 1
@@ -351,6 +381,58 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		; Write the length of the %tokens array to the %tokens_len_ptr, and then return the %tokens array
 		store i32 %tokens_idx, i32* %tokens_len_ptr
 		ret %Token* %tokens
+}
+
+; Checks that starting at %code_idx, a valid keyword is present
+define i1 @check_keyword(i8* %code, i32 %code_len, i32 %code_idx, i8* %keyword, i32 %keyword_len) {
+	entry:
+		%code_char_ptr = getelementptr i8, i8* %code, i32 %code_idx
+
+		br label %check-at-start
+
+	check-at-start: ; Check whether we are at the start of the string
+		%at_start_comp = icmp eq i32 %code_idx, 0
+
+		br i1 %at_start_comp, label %check-avail-space, label %check-ws-before
+
+	check-ws-before: ; Check whether the character at %code_idx - 1 is a whitespace character
+		%before_idx = sub i32 %code_idx, 1
+		%before_ptr = getelementptr i8, i8* %code, i32 %before_idx
+		%before_char = load i8, i8* %before_ptr
+		%ws_before_comp = call i1 @is_ws(i8 %before_char)
+
+		br i1 %ws_before_comp, label %check-avail-space, label %exit-false
+
+	check-avail-space: ; Check whether %code_idx + %keyword_len is less than %code_len
+		%after_idx = add i32 %code_idx, %keyword_len
+
+		%avail_space_comp = icmp ult i32 %after_idx, %code_len
+
+		br i1 %avail_space_comp, label %check-ws-after, label %check-at-end
+
+	check-at-end: ; Check whether %code_idx + %keyword_len is equal to %code_len
+		%at_end_comp = icmp eq i32 %after_idx, %code_len
+
+		br i1 %at_end_comp, label %check-streq, label %exit-false
+
+	check-ws-after: ; Check that there is whitespace at %code_idx + %keyword_len
+		%after_ptr = getelementptr i8, i8* %code, i32 %after_idx
+		%after_char = load i8, i8* %after_ptr
+		%ws_after_comp = call i1 @is_ws(i8 %after_char)
+
+		br i1 %ws_after_comp, label %check-streq, label %exit-false
+
+	check-streq: ; Check that the string starting at %code_idx and advancing %keyword_len places is equal to %keyword
+		%keyword_stop = sub i32 %keyword_len, 1
+		%streq_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 %keyword_stop, i8* %keyword, i32 0, i32 %keyword_stop)
+
+		br i1 %streq_comp, label %exit-true, label %exit-false
+
+	exit-false:
+		ret i1 0
+
+	exit-true:
+		ret i1 1
 }
 
 define void @dbg_tokens(%Token* %tokens, i32 %tokens_len) {
