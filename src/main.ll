@@ -114,7 +114,7 @@ define i8* @Token.data(%Token* %tok) {
 @ws_chars_str = private constant [4 x i8] c"\0A\0D\09\20" ; "\n\r\t "
 @equals_sign = private constant i8 61 ; '='
 
-@dbg_lex_kwrd_cstr = private constant [28 x i8] c"Keyword found at index: %i\0A\00"
+@dbg_lex_found_token_cstr = private constant [31 x i8] c"Token found at code index: %i\0A\00"
 @dbg_tokens_len_cstr = private constant [19 x i8] c"Tokens length: %i\0A\00"
 @dbg_token_cstr = private constant [43 x i8] c"Token(type = %u, subtype = %u, data = %u)\0A\00"
 
@@ -189,7 +189,10 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%token_type_keyword = load i32, i32* @token_type_keyword
 		%token_subtype_keyword_fn = load i32, i32* @token_subtype_keyword_fn
 		%token_subtype_keyword_fndef = load i32, i32* @token_subtype_keyword_fndef
-		%dbg_lex_kwrd_cstr = getelementptr [28 x i8], [28 x i8]* @dbg_lex_kwrd_cstr, i32 0, i32 0
+		%token_type_literal = load i32, i32* @token_type_literal
+		%token_subtype_literal_label = load i32, i32* @token_subtype_literal_label
+
+		%dbg_lex_found_token_cstr = getelementptr [31 x i8], [31 x i8]* @dbg_lex_found_token_cstr, i32 0, i32 0
 
 		; Enter the main lexer loop
 		br label %loop-init
@@ -247,14 +250,28 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%kwrd_fndef_len = add i32 1, 0
 		%kwrd_fndef_comp = call i1 @check_keyword(i8* %code, i32 %code_len, i32 %code_idx, i8* %kwrd_fndef_str, i32 %kwrd_fndef_len)
 
-		br i1 %kwrd_fndef_comp, label %add-token, label %continue-inc1
+		br i1 %kwrd_fndef_comp, label %add-token, label %loop-body-literals
 
 	loop-body-literals: ; Check for literals using the @check_literal function
-		%literal_size = alloca i32
-		%literal_subtype = call i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal_size)
+		%literal_size_ptr = alloca i32
+		%literal_subtype = call i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal_size_ptr)
+		%literal_size = load i32, i32* %literal_size_ptr
 
-		; TODO
+		; @token_subtype_literal_i64 = private constant i32 0
+		; @token_subtype_literal_u64 = private constant i32 1
+		; @token_subtype_literal_f64 = private constant i32 2
+		; @token_subtype_literal_bool = private constant i32 3
+		; @token_subtype_literal_str = private constant i32 4
+		; @token_subtype_literal_label = private constant i32 5
 
+		; Switch requires constants/immediates
+		; TODO: Finish
+		switch i32 %literal_subtype, label %loop-body-literals-none [ i32 5, label %loop-body-literals-labels ]
+
+	loop-body-literals-labels: ; TODO
+		br label %add-token
+
+	loop-body-literals-none:
 		br label %continue-inc1
 
 	loop-body-labels: ; TODO
@@ -266,23 +283,28 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 	add-token: ; NOTE: Could this be turned into a function?
 		; Define values based on which token is being added
 		%token_type = phi i32 [ %token_type_keyword, %loop-body-kwrd-fn ],
-		                      [ %token_type_keyword, %loop-body-kwrd-fndef ]
+		                      [ %token_type_keyword, %loop-body-kwrd-fndef ],
+		                      [ %token_type_literal, %loop-body-literals-labels ]
 
 		%token_subtype = phi i32 [ %token_subtype_keyword_fn, %loop-body-kwrd-fn ],
-		                         [ %token_subtype_keyword_fndef, %loop-body-kwrd-fndef ]
+		                         [ %token_subtype_keyword_fndef, %loop-body-kwrd-fndef ],
+								 [ %token_subtype_literal_label, %loop-body-literals-labels ]
 
 		%token_data_len = phi i32 [ 0, %loop-body-kwrd-fn ],
-		                          [ 0, %loop-body-kwrd-fndef ]
+		                          [ 0, %loop-body-kwrd-fndef ],
+								  [ 0, %loop-body-literals-labels ]
 
 		%token_data = phi i8* [ null, %loop-body-kwrd-fn ],
-		                      [ null, %loop-body-kwrd-fndef ]
+		                      [ null, %loop-body-kwrd-fndef ],
+							  [ null, %loop-body-literals-labels ]
 
 		%token_skip = phi i32 [ 2, %loop-body-kwrd-fn ],
-		                     [ 1, %loop-body-kwrd-fndef ]
+		                      [ 1, %loop-body-kwrd-fndef ],
+							  [ %literal_size, %loop-body-literals-labels ]
 
 		; Print "Keyword found at index: %i" (where obviously the %i is the index)
 		; TODO: Change this. It is not only finding keywords that will execute this line
-		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_kwrd_cstr, i32 %code_idx)
+		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_found_token_cstr, i32 %code_idx)
 
 		; Create and add a token to the tokens array
 		%new_fn_token = call %Token @Token.new(i32 %token_type, i32 %token_subtype, i32 %token_data_len, i8* %token_data)
