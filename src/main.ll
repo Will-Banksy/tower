@@ -98,10 +98,11 @@ define i8* @Token.data(%Token* %tok) {
 
 ; Constant values for token subtype of type literal
 @token_subtype_literal_i64 = private constant i32 0
-@token_subtype_literal_f64 = private constant i32 1
-@token_subtype_literal_bool = private constant i32 2
-@token_subtype_literal_str = private constant i32 3
-@token_subtype_literal_label = private constant i32 4
+@token_subtype_literal_u64 = private constant i32 1
+@token_subtype_literal_f64 = private constant i32 2
+@token_subtype_literal_bool = private constant i32 3
+@token_subtype_literal_str = private constant i32 4
+@token_subtype_literal_label = private constant i32 5
 
 ; Type ident has no subtypes
 ; Type label has no subtypes
@@ -119,6 +120,9 @@ define i8* @Token.data(%Token* %tok) {
 
 @keyword_fn_str = private constant [2 x i8] c"fn"
 @keyword_fndef_str = private constant [1 x i8] c"="
+
+@literal_bool_false_str = private constant [5 x i8] c"false"
+@literal_bool_true_str = private constant [4 x i8] c"true"
 
 define i32 @main(i32 %argc, i8** %argv) {
 	; Read the filename from the first argument of %argv
@@ -245,7 +249,12 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 
 		br i1 %kwrd_fndef_comp, label %add-token, label %continue-inc1
 
-	loop-body-literals: ; TODO
+	loop-body-literals: ; Check for literals using the @check_literal function
+		%literal_size = alloca i32
+		%literal_subtype = call i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal_size)
+
+		; TODO
+
 		br label %continue-inc1
 
 	loop-body-labels: ; TODO
@@ -308,7 +317,136 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		ret %Token* %tokens
 }
 
-; Checks that starting at %code_idx, a valid keyword is present
+; Checks that starting at %code_idx, a valid literal is present. Returns -1 if no literal was found,
+; or the number corresponding to the appropriate token subtype otherwise
+define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal_size) {
+	; Literals: i64, u64, f64, str, bool, str, label
+
+	entry:
+		br label %check-bool-literals
+
+	check-bool-literals:
+		br label %check-bool-literals-true
+
+	check-bool-literals-true: ; Check for "true"
+		%literal_bool_true_str = getelementptr [4 x i8], [4 x i8]* @literal_bool_true_str, i32 0, i32 0
+		%literal_bool_true_len = add i32 4, 0
+		%literal_bool_true_comp = call i1 @check_keyword(i8* %code, i32 %code_len, i32 %code_idx, i8* %literal_bool_true_str, i32 %literal_bool_true_len)
+
+		br i1 %literal_bool_true_comp, label %return-literal-bool, label %check-bool-literals-false
+
+	check-bool-literals-false: ; Check for "false"
+		%literal_bool_false_str = getelementptr [5 x i8], [5 x i8]* @literal_bool_false_str, i32 0, i32 0
+		%literal_bool_false_len = add i32 5, 0
+		%literal_bool_false_comp = call i1 @check_keyword(i8* %code, i32 %code_len, i32 %code_idx, i8* %literal_bool_false_str, i32 %literal_bool_false_len)
+
+		br i1 %literal_bool_false_comp, label %return-literal-bool, label %check-lab-literals
+
+	check-lab-literals: ; Check if the current character is ':'
+		%code_char_ptr = getelementptr i8, i8* %code, i32 %code_idx
+		%code_char = load i8, i8* %code_char_ptr
+
+		%code_char_colon_comp = icmp eq i8 %code_char, 58 ; ':'
+
+		br i1 %code_char_colon_comp, label %check-lab-literals-name, label %return-none
+
+	check-lab-literals-name: ; Get the index of the end of the label name
+		%next_ws = call i32 @str_find_ws_or_end(i8* %code, i32 %code_idx, i32 %code_len)
+
+		%code_next_idx = add i32 %code_idx, 1
+		%lab_lit_len_zero_comp = icmp eq i32 %next_ws, %code_next_idx
+
+		br i1 %lab_lit_len_zero_comp, label %return-none, label %check-lab-literals-name-is-ident
+
+	check-lab-literals-name-is-ident:
+		%code_last_before_ws_idx = sub i32 %next_ws, 1
+		%label_ident_name_comp = call i1 @is_ident_str(i8* %code_char_ptr, i32 %code_next_idx, i32 %code_last_before_ws_idx, i1 1)
+
+		br i1 %label_ident_name_comp, label %return-literal-lab, label %check-num-literals
+
+	check-num-literals: ; TODO
+		br label %return-none
+
+	return-literal-bool:
+		%bool_lit_size = phi i32 [ 4, %check-bool-literals-true ], [ 5, %check-bool-literals-false ]
+		store i32 %bool_lit_size, i32* %literal_size
+
+		%token_subtype_literal_bool = load i32, i32* @token_subtype_literal_bool
+		ret i32 %token_subtype_literal_bool
+
+	return-literal-lab:
+		%lab_lit_size = sub i32 %next_ws, %code_idx ; TODO: Is this the correct calculation?
+		store i32 %lab_lit_size, i32* %literal_size
+
+		%token_subtype_literal_label = load i32, i32* @token_subtype_literal_label
+		ret i32 %token_subtype_literal_label
+
+	return-none:
+		store i32 0, i32* %literal_size
+
+		ret i32 -1
+}
+
+
+
+define i1 @is_ident_str(i8* %str, i32 %start_idx, i32 %end_idx, i1 %allow_num_at_start_comp) {
+	entry:
+		br label %loop
+
+	loop:
+		%i = phi i32 [ %start_idx, %entry ], [ %next_i, %loop-checkend ]
+		%str_start_comp = phi i1 [ 1, %entry ], [ 0, %loop-checkend ]
+
+		%next_i = add i32 %i, 1
+
+		%not_num_allow_comp = xor i1 %allow_num_at_start_comp, 1 ; NOT is implemented with xor'ing an i1 with 1
+		%num_allowed_comp = and i1 %str_start_comp, %not_num_allow_comp
+
+		%str_char_ptr = getelementptr i8, i8* %str, i32 %i
+		%str_char = load i8, i8* %str_char_ptr
+
+		%ident_char_comp = call i1 @is_ident_char(i8 %str_char, i1 %num_allowed_comp)
+
+		br label %loop-checkend
+
+	loop-checkend:
+		%at_end_comp = icmp eq i32 %i, %end_idx
+
+		br i1 %at_end_comp, label %return-true, label %loop
+
+	return-false:
+		ret i1 0
+
+	return-true:
+		ret i1 1
+}
+
+define i1 @is_ident_char(i8 %char, i1 %allow_num) {
+	; (%char >= 65 && %char <= 90) || (%char >= 97 && %char <= 122)
+	%alpha_uc_lowerbound_comp = icmp uge i8 %char, 65 ; 'A'
+	%alpha_uc_upperbound_comp = icmp ule i8 %char, 90 ; 'Z'
+	%alpha_uc_comp = and i1 %alpha_uc_lowerbound_comp, %alpha_uc_upperbound_comp
+	%alpha_lc_lowerbound_comp = icmp uge i8 %char, 97 ; 'a'
+	%alpha_lc_upperbound_comp = icmp ule i8 %char, 122 ; 'z'
+	%alpha_lc_comp = and i1 %alpha_lc_lowerbound_comp, %alpha_lc_upperbound_comp
+	%alpha_comp = or i1 %alpha_uc_comp, %alpha_lc_comp
+
+	; (%char >= 48 && %char <= 57) && %allow_num
+	%num_lowerbound_comp = icmp uge i8 %char, 48 ; '0'
+	%num_upperbound_comp = icmp ule i8 %char, 57 ; '9'
+	%num_comp = and i1 %num_lowerbound_comp, %num_upperbound_comp
+	%valid_num_comp = and i1 %num_comp, %allow_num
+
+	%valid_so_far_comp = or i1 %alpha_comp, %valid_num_comp
+
+	%underscore_comp = icmp eq i8 %char, 95 ; '_'
+
+	%valid_ident_char_comp = or i1 %valid_so_far_comp, %underscore_comp
+
+	ret i1 %valid_ident_char_comp
+}
+
+; Checks that starting at %code_idx, a valid keyword is present. Returns 1 if a valid keyword is found, 0 otherwise
 define i1 @check_keyword(i8* %code, i32 %code_len, i32 %code_idx, i8* %keyword, i32 %keyword_len) {
 	entry:
 		%code_char_ptr = getelementptr i8, i8* %code, i32 %code_idx
@@ -478,6 +616,7 @@ define i1 @str_eq(i8* %str0, i32 %str0_start, i32 %str0_end, i8* %str1, i32 %str
 		ret i1 1
 }
 
+; Finds and returns the next instance of %seek_char starting at %start and ending at %end (inclusive) or -1 if no match
 define i32 @str_find(i8* %str, i8 %seek_char, i32 %start, i32 %end) {
 	entry:
 		br label %loop
@@ -502,6 +641,43 @@ define i32 @str_find(i8* %str, i8 %seek_char, i32 %start, i32 %end) {
 
 		; Check if we're at the end of the string
 		%at_end_comp = icmp eq i32 %i, %end
+
+		; If so then go to %exit, otherwise start back at %loop
+		br i1 %at_end_comp, label %exit, label %loop
+
+	exit:
+		; If we came from %loop, then the return value will be %i since we only come from %loop when we've found a match
+		; Otherwise, we came from continue, indicating we traversed the whole string without finding a match, so return -1
+		%ret_i = phi i32 [ %i, %loop ], [ -1, %continue ]
+		ret i32 %ret_i
+}
+
+; Finds and returns the next instance of any whitespace starting at %start_idx and ending at %end_idx (exclusive) or %end_idx if no match
+; NOTE: If necessary, rename this to @str_find_ws, make it return -1 if no match, then make another fn with the _or_end and call this fn and transform -1 to %end_idx
+define i32 @str_find_ws_or_end(i8* %str, i32 %start_idx, i32 %end_idx) {
+	entry:
+		br label %loop
+
+	loop:
+		; If coming from entry, set %i to %start, if coming from %continue, set it to %next_i (i + 1)
+		%i = phi i32 [ %start_idx, %entry ], [ %next_i, %continue ]
+
+		; Get a pointer to the current character in %str and dereference it to get the character value
+		%curr_char_ptr = getelementptr i8, i8* %str, i32 %i
+		%curr_char = load i8, i8* %curr_char_ptr
+
+		; Compare the character with the sought character
+		%char_comp = call i1 @is_ws(i8 %curr_char)
+
+		; If the current character is whitespace, then jump to %exit, otherwise jump to %continue
+		br i1 %char_comp, label %exit, label %continue
+
+	continue:
+		; i + 1
+		%next_i = add i32 %i, 1
+
+		; Check if we're at the end of the string
+		%at_end_comp = icmp eq i32 %i, %end_idx
 
 		; If so then go to %exit, otherwise start back at %loop
 		br i1 %at_end_comp, label %exit, label %loop
