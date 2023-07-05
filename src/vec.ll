@@ -1,4 +1,6 @@
-; FIXME: Problem: This is not generic. It's also not concise
+; TODO: Problem: This is not generic. I kinda do want like a Vec type, but I'd want more of a generic one...
+;       Maybe I can write a li'l preprocessor or macro engine or whatnot to do some monomorphisation... but then I'm not really writing LLVM IR any more
+;       I could just copy-paste and modify it for each type I wanna support
 
 %Vec = type {
 	i64, ; length

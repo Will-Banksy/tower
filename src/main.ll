@@ -13,6 +13,8 @@ declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allo
 
 ; Forward declarations of functions from other modules
 
+; TODO: Consider declaring functions from this module here, as an easy way to see what functions are present
+
 ; TODO: Also decide how conditionals are going to work in tower - we want it simplistic as possible ideally but we might need some more keywords
 ; Also do I allow overloading or not?
 ; A way to handle conditionals *and* loops - goto and goif. Have a syntax for declaring labels, and have labels as a value, and then implement conditional goto label (scoped?)
@@ -118,55 +120,6 @@ define i8* @Token.data(%Token* %tok) {
 @keyword_fn_str = private constant [2 x i8] c"fn"
 @keyword_fndef_str = private constant [1 x i8] c"="
 
-; Impl %Token
-
-; define i8* @token_getref_to(%Token* %token, i32 %token_attr_idx) {
-; 	entry:
-; 		switch i32 %token_attr_idx, label %return-null [ i32 0, label %return-ty i32 1, label %return-sty i32 2, label %return-dat ]
-
-; 	return-ty:
-; 		%tok_ty_voidptr = bitcast %Token* %token to i8*
-
-; 		ret i8* %tok_ty_voidptr
-
-; 	return-sty:
-; 		%tok_sty_ptr = getelementptr inbounds %Token, %Token* %token, i32 0, i32 1
-; 		%tok_sty_voidptr = bitcast i32* %tok_sty_ptr to i8*
-
-; 		ret i8* %tok_sty_voidptr
-
-; 	return-dat:
-; 		%tok_dat_ptr = getelementptr inbounds %Token, %Token* %token, i32 0, i32 2
-
-; 		ret i8** %tok_dat_ptr
-
-; 	return-null:
-; 		ret i8* null
-; }
-
-; define i32 @token_get_type(%Token* %token) {
-; 	%tok_ty_ptr = bitcast %Token* %token to i32*
-; 	%tok_ty = load i32, i32* %tok_ty_ptr
-
-; 	ret i32 %tok_ty
-; }
-
-; define i32 @token_get_subtype(%Token* %token) {
-; 	%tok_ty_ptr = getelementptr inbounds %Token, %Token* %token, i32 0, i32 1
-; 	%tok_ty = load i32, i32* %tok_ty_ptr
-
-; 	ret i32 %tok_ty
-; }
-
-; define i8* @token_get_data(%Token* %token) {
-; 	%tok_dat_ptr = getelementptr inbounds %Token, %Token* %token, i32 0, i32 2
-; 	%tok_dat = load i8*, i8** %tok_dat_ptr
-
-; 	ret i8* %tok_dat
-; }
-
-; End
-
 define i32 @main(i32 %argc, i8** %argv) {
 	; Read the filename from the first argument of %argv
 	%filename_ptr = getelementptr inbounds i8*, i8** %argv, i32 1
@@ -252,84 +205,56 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		br i1 %at_end_comp, label %exit, label %loop-body
 
 	loop-body:
-		; Get a pointer to the current code character and dereference it to get it's value
+		; Get a pointer to the current code character and dereference it to get its value
 		%code_char_ptr = getelementptr i8, i8* %code, i32 %code_idx
 		%code_char = load i8, i8* %code_char_ptr
 
-		br label %loop-body-kwrds
+		br label %loop-body-skip-ws
+
+	loop-body-skip-ws: ; If the current code character is whitespace, just continue to the next character, otherwise go to checking for comments
+		%code_char_is_ws_comp = call i1 @is_ws(i8 %code_char)
+
+		br i1 %code_char_is_ws_comp, label %continue-inc1, label %loop-body-comments
+
+	loop-body-comments: ; Check for comments ('#' until newline) and skip them
+		%comment_comp = icmp eq i8 %code_char, 35 ; '#'
+
+		br i1 %comment_comp, label %loop-body-comments-skip, label %loop-body-kwrds
+
+	loop-body-comments-skip: ; Invoked if the current char is a comment, calculates the amount of characters to move to the next newline '\n'
+		%code_last_idx = sub i32 %code_len, 1
+		%comment_end = call i32 @str_find(i8* %code, i8 10, i32 %code_idx, i32 %code_last_idx)
+		%comment_skip = sub i32 %comment_end, %code_idx
+
+		br label %continue
 
 	loop-body-kwrds:
 		br label %loop-body-kwrd-fn
 
-	loop-body-kwrd-fn:
+	loop-body-kwrd-fn: ; Check for the "fn" keyword, and if present add token
 		%kwrd_fn_str = getelementptr [2 x i8], [2 x i8]* @keyword_fn_str, i32 0, i32 0
 		%kwrd_fn_len = add i32 2, 0
 		%kwrd_fn_comp = call i1 @check_keyword(i8* %code, i32 %code_len, i32 %code_idx, i8* %kwrd_fn_str, i32 %kwrd_fn_len)
 
 		br i1 %kwrd_fn_comp, label %add-token, label %loop-body-kwrd-fndef
 
-	loop-body-kwrd-fndef:
+	loop-body-kwrd-fndef: ; Check for the "=" keyword, and if present add token
 		%kwrd_fndef_str = getelementptr [1 x i8], [1 x i8]* @keyword_fndef_str, i32 0, i32 0
 		%kwrd_fndef_len = add i32 1, 0
 		%kwrd_fndef_comp = call i1 @check_keyword(i8* %code, i32 %code_len, i32 %code_idx, i8* %kwrd_fndef_str, i32 %kwrd_fndef_len)
 
 		br i1 %kwrd_fndef_comp, label %add-token, label %continue-inc1
 
-	; loop-body-kwrd-fn:
-	; 	; Check for the presence of the "fn" keyword
-	; 	%keyword_fn_str = getelementptr [2 x i8], [2 x i8]* @keyword_fn_str, i32 0, i32 0
-	; 	%fn_comp = call i1 @str_eq(i8* %code_char_ptr, i32 0, i32 1, i8* %keyword_fn_str, i32 0, i32 1)
+	loop-body-literals: ; TODO
+		br label %continue-inc1
 
-	; 	; TODO: Need to check for all sorts of tokens - basically check for the other keywords,
-	; 	; labels, and literals, and then if a sequence of characters isn't any of those it's probably an identifier
+	loop-body-labels: ; TODO
+		br label %continue-inc1
 
-	; 	; If "fn" is found at the current code index, then go to the %kwrd-fn block to handle it
-	; 	br i1 %fn_comp, label %kwrd-fn, label %loop-body-kwrd-fndef
+	loop-body-idents: ; TODO
+		br label %continue-inc1
 
-	; loop-body-kwrd-fndef:
-	; 	; Compare the current character with 61, the int value for '=', the fndef keyword
-	; 	%fndef_comp = icmp eq i8 %code_char, 61 ; '='
-
-	; 	; If '=', then proceed to %kwrd-fndef, otherwise go to %continue-inc1
-	; 	br i1 %fndef_comp, label %kwrd-fndef, label %continue-inc1
-
-	; kwrd-fn:
-	; 	; Jump directly into the first stage of checking, then proceed through each stage until perhaps getting to the
-	; 	; finish stage, from which we write to the tokens array and go back to the main loop
-	; 	br label %kwrd-fn-check-ws-before
-
-	; kwrd-fn-check-ws-before:
-	; 	; If the character after the "fn" is a ws, then go to %kwrd-fn-finish, otherwise go to %continue-inc1
-	; 	br i1 %prev_is_ws_comp, label %kwrd-fn-check-ws-after-endcheck, label %continue-inc1
-
-	; kwrd-fn-check-ws-after-endcheck:
-	; 	; Check that the index after "fn" is not equal to the code length - otherwise the "fn" is at the end of the string
-	; 	%after_idx = add i32 %code_idx, 2
-	; 	%after_isnot_end_comp = icmp ne i32 %after_idx, %code_len
-
-	; 	; If "fn" is at end of string, go to %kwrd-fn-finish, otherwise, check that the next character is ws with %kwrd-fn-check-ws-after
-	; 	br i1 %after_isnot_end_comp, label %kwrd-fn-check-ws-after, label %kwrd-fn-finish
-
-	; kwrd-fn-check-ws-after:
-	; 	; Get a pointer to %code_char_ptr + 2 (length of fn keyword)
-	; 	%after_ptr = getelementptr i8, i8* %code_char_ptr, i32 2
-	; 	%after_char = load i8, i8* %after_ptr
-	; 	%after_is_ws_comp = call i1 @is_ws(i8 %after_char)
-
-	; 	; If next character is ws, go to %kwrd-fn-finish, otherwise go to %continue-inc1
-	; 	br i1 %after_is_ws_comp, label %kwrd-fn-finish, label %continue-inc1
-
-	; kwrd-fn-finish:
-	; 	; Go back to the start of the loop
-	; 	br label %add-token
-
-	; kwrd-fndef:
-	; 	br label %kwrd-fndef-finish
-
-	; kwrd-fndef-finish:
-	; 	br label %add-token
-
-	add-token:
+	add-token: ; NOTE: Could this be turned into a function?
 		; Define values based on which token is being added
 		%token_type = phi i32 [ %token_type_keyword, %loop-body-kwrd-fn ],
 		                      [ %token_type_keyword, %loop-body-kwrd-fndef ]
@@ -343,7 +268,7 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%token_data = phi i8* [ null, %loop-body-kwrd-fn ],
 		                      [ null, %loop-body-kwrd-fndef ]
 
-		%code_skip = phi i32 [ 2, %loop-body-kwrd-fn ],
+		%token_skip = phi i32 [ 2, %loop-body-kwrd-fn ],
 		                     [ 1, %loop-body-kwrd-fndef ]
 
 		; Print "Keyword found at index: %i" (where obviously the %i is the index)
@@ -364,8 +289,8 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		br label %continue
 
 	continue:
-		; Define an increment amount for each label we're coming from, which basically means define an increment for each found token otherwise 1
-		%inc_amt = phi i32 [ 1, %continue-inc1 ], [ %code_skip, %add-token ]
+		; Define an increment amount for each label we're coming from, which basically means define an increment for each found thing otherwise 1
+		%inc_amt = phi i32 [ 1, %continue-inc1 ], [ %token_skip, %add-token ], [ %comment_skip, %loop-body-comments-skip ]
 
 		; Check the character at the current code ptr before increasing it
 		%atend_curr_is_ws_comp = call i1 @is_ws(i8 %code_char)
