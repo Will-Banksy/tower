@@ -265,7 +265,7 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		; @token_subtype_literal_label = private constant i32 5
 
 		; Switch requires constants/immediates
-		; TODO: Finish
+		; TODO: Create tokens for each literal type. Also think about how I'm gonna handle token data
 		switch i32 %literal_subtype, label %loop-body-literals-none [ i32 5, label %loop-body-literals-labels ]
 
 	loop-body-literals-labels: ; TODO
@@ -386,7 +386,20 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 
 		br i1 %label_ident_name_comp, label %return-literal-lab, label %check-num-literals
 
-	check-num-literals: ; TODO
+	check-num-literals: ; TODO also decide do I want to allow negative numbers lol yeah probably
+		br label %return-none
+
+	check-str-literals: ; TODO
+		; If the current character is ", then search for an unescaped closing "
+		%is_open_quote_comp = icmp eq i8 %code_char, 34 ; '"'
+		br i1 %is_open_quote_comp, label %check-str-literals-find-closing, label %return-none
+
+	check-str-literals-find-closing: ; TODO: How am I gonna do strings??? Really I kinda want to support C-like escaped strings
+		; TODO: Use @rcount_continuous to count the number of backslashes before it and if odd then the " is escaped, if even or 0 then it's not escaped
+		%code_last_idx = sub i32 %code_len, 1
+		%maybe_close_quote_idx = call i32 @str_find(i8* %code, i8 34, i32 %code_next_idx, i32 %code_last_idx)
+		%before_maybe_close_quote_idx = sub i32 %maybe_close_quote_idx, 1
+
 		br label %return-none
 
 	return-literal-bool:
@@ -408,8 +421,6 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 
 		ret i32 -1
 }
-
-
 
 define i1 @is_ident_str(i8* %str, i32 %start_idx, i32 %end_idx, i1 %allow_num_at_start_comp) {
 	entry:
@@ -772,4 +783,8 @@ define i1 @char_is_any(i8 %char, i8* %comp_chars, i32 %comp_chars_len) {
 		; Otherwise, we came from continue, indicating we traversed the whole comparison character array without finding a match, so return false (0)
 		%ret_comp = phi i1 [ 1, %loop ], [ 0, %continue ]
 		ret i1 %ret_comp
+}
+
+define i32 @rcount_continuous(i8* %str, i8 %counting_char, i32 %lower_bound, i32 %upper_bound) {
+	ret i32 0 ; TODO
 }
