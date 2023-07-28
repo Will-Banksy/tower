@@ -11,8 +11,6 @@ declare i32 @fclose(i8*) ; FILE -> error code
 declare void @free(i8*) ; ptr to allocated memory
 declare i8* @realloc(i8*) ; ptr to allocated memory -> ptr to newly resized allocated memory
 
-; Forward declarations of functions from other modules
-
 ; TODO: Consider declaring functions from this module here, as an easy way to see what functions are present
 
 ; TODO: Also decide how conditionals are going to work in tower - we want it simplistic as possible ideally but we might need some more keywords
@@ -117,6 +115,7 @@ define i8* @Token.data(%Token* %tok) {
 @dbg_lex_found_token_cstr = private constant [31 x i8] c"Token found at code index: %i\0A\00"
 @dbg_tokens_len_cstr = private constant [19 x i8] c"Tokens length: %i\0A\00"
 @dbg_token_cstr = private constant [43 x i8] c"Token(type = %u, subtype = %u, data = %u)\0A\00"
+@dbg_checkpoint_cstr = private constant [20 x i8] c"Hit checkpoint %i!\0A\00"
 
 @keyword_fn_str = private constant [2 x i8] c"fn"
 @keyword_fndef_str = private constant [1 x i8] c"="
@@ -189,8 +188,11 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%token_type_keyword = load i32, i32* @token_type_keyword
 		%token_subtype_keyword_fn = load i32, i32* @token_subtype_keyword_fn
 		%token_subtype_keyword_fndef = load i32, i32* @token_subtype_keyword_fndef
+
 		%token_type_literal = load i32, i32* @token_type_literal
 		%token_subtype_literal_label = load i32, i32* @token_subtype_literal_label
+		%token_subtype_literal_str = load i32, i32* @token_subtype_literal_str
+		%token_subtype_literal_bool = load i32, i32* @token_subtype_literal_bool
 
 		%dbg_lex_found_token_cstr = getelementptr [31 x i8], [31 x i8]* @dbg_lex_found_token_cstr, i32 0, i32 0
 
@@ -265,11 +267,22 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		; @token_subtype_literal_label = private constant i32 5
 
 		; Switch requires constants/immediates
-		; TODO: Create tokens for each literal type. Also think about how I'm gonna handle token data
-		switch i32 %literal_subtype, label %loop-body-literals-none [ i32 5, label %loop-body-literals-labels ]
+		; TODO: Create tokens for each literal type.
+		; TODO: Think about how I'm gonna handle token data
+		switch i32 %literal_subtype, label %loop-body-literals-none [ i32 5, label %loop-body-literals-labels
+		                                                              i32 4, label %loop-body-literals-strs
+																	  i32 3, label %loop-body-literals-bools ]
 
-	loop-body-literals-labels: ; TODO
+	loop-body-literals-labels:
 		br label %add-token
+
+	loop-body-literals-strs:
+		br label %add-token
+
+	loop-body-literals-bools:
+		br label %add-token
+
+	; TODO: The rest of the token types calling %add-token
 
 	loop-body-literals-none:
 		br label %continue-inc1
@@ -284,26 +297,35 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		; Define values based on which token is being added
 		%token_type = phi i32 [ %token_type_keyword, %loop-body-kwrd-fn ],
 		                      [ %token_type_keyword, %loop-body-kwrd-fndef ],
-		                      [ %token_type_literal, %loop-body-literals-labels ]
+		                      [ %token_type_literal, %loop-body-literals-labels ],
+		                      [ %token_type_literal, %loop-body-literals-strs ],
+		                      [ %token_type_literal, %loop-body-literals-bools ]
 
 		%token_subtype = phi i32 [ %token_subtype_keyword_fn, %loop-body-kwrd-fn ],
 		                         [ %token_subtype_keyword_fndef, %loop-body-kwrd-fndef ],
-								 [ %token_subtype_literal_label, %loop-body-literals-labels ]
+								 [ %token_subtype_literal_label, %loop-body-literals-labels ],
+								 [ %token_subtype_literal_str, %loop-body-literals-strs ],
+								 [ %token_subtype_literal_bool, %loop-body-literals-bools ]
 
 		%token_data_len = phi i32 [ 0, %loop-body-kwrd-fn ],
 		                          [ 0, %loop-body-kwrd-fndef ],
-								  [ 0, %loop-body-literals-labels ]
+								  [ 0, %loop-body-literals-labels ],
+								  [ 0, %loop-body-literals-strs ],
+								  [ 0, %loop-body-literals-bools ]
 
 		%token_data = phi i8* [ null, %loop-body-kwrd-fn ],
 		                      [ null, %loop-body-kwrd-fndef ],
-							  [ null, %loop-body-literals-labels ]
+							  [ null, %loop-body-literals-labels ],
+							  [ null, %loop-body-literals-strs ],
+							  [ null, %loop-body-literals-bools ]
 
 		%token_skip = phi i32 [ 2, %loop-body-kwrd-fn ],
 		                      [ 1, %loop-body-kwrd-fndef ],
-							  [ %literal_size, %loop-body-literals-labels ]
+							  [ %literal_size, %loop-body-literals-labels ],
+							  [ %literal_size, %loop-body-literals-strs ],
+							  [ %literal_size, %loop-body-literals-bools ]
 
 		; Print "Keyword found at index: %i" (where obviously the %i is the index)
-		; TODO: Change this. It is not only finding keywords that will execute this line
 		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_found_token_cstr, i32 %code_idx)
 
 		; Create and add a token to the tokens array
@@ -367,15 +389,15 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 	check-lab-literals: ; Check if the current character is ':'
 		%code_char_ptr = getelementptr i8, i8* %code, i32 %code_idx
 		%code_char = load i8, i8* %code_char_ptr
+		%code_next_idx = add i32 %code_idx, 1
 
 		%code_char_colon_comp = icmp eq i8 %code_char, 58 ; ':'
 
-		br i1 %code_char_colon_comp, label %check-lab-literals-name, label %return-none
+		br i1 %code_char_colon_comp, label %check-lab-literals-name, label %check-str-literals
 
 	check-lab-literals-name: ; Get the index of the end of the label name
 		%next_ws = call i32 @str_find_ws_or_end(i8* %code, i32 %code_idx, i32 %code_len)
 
-		%code_next_idx = add i32 %code_idx, 1
 		%lab_lit_len_zero_comp = icmp eq i32 %next_ws, %code_next_idx
 
 		br i1 %lab_lit_len_zero_comp, label %return-none, label %check-lab-literals-name-is-ident
@@ -384,23 +406,30 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 		%code_last_before_ws_idx = sub i32 %next_ws, 1
 		%label_ident_name_comp = call i1 @is_ident_str(i8* %code_char_ptr, i32 %code_next_idx, i32 %code_last_before_ws_idx, i1 1)
 
-		br i1 %label_ident_name_comp, label %return-literal-lab, label %check-num-literals
+		br i1 %label_ident_name_comp, label %return-literal-lab, label %return-none
 
-	check-num-literals: ; TODO also decide do I want to allow negative numbers lol yeah probably
+	check-num-literals: ; TODO
 		br label %return-none
 
-	check-str-literals: ; TODO
+	check-str-literals:
 		; If the current character is ", then search for an unescaped closing "
 		%is_open_quote_comp = icmp eq i8 %code_char, 34 ; '"'
 		br i1 %is_open_quote_comp, label %check-str-literals-find-closing, label %return-none
 
-	check-str-literals-find-closing: ; TODO: How am I gonna do strings??? Really I kinda want to support C-like escaped strings
-		; TODO: Use @rcount_continuous to count the number of backslashes before it and if odd then the " is escaped, if even or 0 then it's not escaped
-		%code_last_idx = sub i32 %code_len, 1
-		%maybe_close_quote_idx = call i32 @str_find(i8* %code, i8 34, i32 %code_next_idx, i32 %code_last_idx)
-		%before_maybe_close_quote_idx = sub i32 %maybe_close_quote_idx, 1
+	check-str-literals-find-closing:
+		%start_quote_find_idx = phi i32 [ %code_next_idx, %check-str-literals ], [ %after_maybe_close_quote_idx, %check-str-literals-find-closing ]
 
-		br label %return-none
+		%code_last_idx = sub i32 %code_len, 1
+		%maybe_close_quote_idx = call i32 @str_find(i8* %code, i8 34, i32 %start_quote_find_idx, i32 %code_last_idx) ; BUG we don't handle if no found
+		%before_maybe_close_quote_idx = sub i32 %maybe_close_quote_idx, 1
+		%after_maybe_close_quote_idx = add i32 %maybe_close_quote_idx, 1
+
+		; '\' = 92
+		%num_backslashes_before_close = call i32 @rcount_continuous(i8* %code, i8 92, i32 0, i32 %before_maybe_close_quote_idx)
+		%num_backslashes_mod2 = urem i32 %num_backslashes_before_close, 2
+		%is_quote_escaped = icmp ne i32 %num_backslashes_mod2, 0
+
+		br i1 %is_quote_escaped, label %check-str-literals-find-closing, label %return-literal-str
 
 	return-literal-bool:
 		%bool_lit_size = phi i32 [ 4, %check-bool-literals-true ], [ 5, %check-bool-literals-false ]
@@ -415,6 +444,14 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 
 		%token_subtype_literal_label = load i32, i32* @token_subtype_literal_label
 		ret i32 %token_subtype_literal_label
+
+	return-literal-str:
+		%str_lit_size_minus_1 = sub i32 %maybe_close_quote_idx, %code_idx
+		%str_lit_size = add i32 %str_lit_size_minus_1, 1
+		store i32 %str_lit_size, i32* %literal_size
+
+		%token_subtype_literal_str = load i32, i32* @token_subtype_literal_str
+		ret i32 %token_subtype_literal_str
 
 	return-none:
 		store i32 0, i32* %literal_size
@@ -785,6 +822,36 @@ define i1 @char_is_any(i8 %char, i8* %comp_chars, i32 %comp_chars_len) {
 		ret i1 %ret_comp
 }
 
+; Counts the number of occurrences of %counting_char backwards starting at %upper_bound and ending at %lower_bound (inclusive)
 define i32 @rcount_continuous(i8* %str, i8 %counting_char, i32 %lower_bound, i32 %upper_bound) {
-	ret i32 0 ; TODO
+	entry:
+		br label %loop
+
+	loop:
+		%i = phi i32 [ %upper_bound, %entry ], [ %next_i, %continue ]
+
+		%str_char_ptr = getelementptr i8, i8* %str, i32 %i
+		%str_char = load i8, i8* %str_char_ptr
+
+		%is_of_char_comp = icmp eq i8 %str_char, %counting_char
+
+		br i1 %is_of_char_comp, label %continue, label %exit
+
+	continue:
+		%next_i = add i32 %i, 1
+
+		%at_end_comp = icmp eq i32 %i, %lower_bound
+
+		br i1 %at_end_comp, label %exit, label %loop
+
+	exit:
+		%ret_val = sub i32 %upper_bound, %i
+
+		ret i32 %ret_val
+}
+
+define void @dbg_hit_checkpoint(i32 %num) {
+	%dbg_checkpoint_cstr = getelementptr [20 x i8], [20 x i8]* @dbg_checkpoint_cstr, i32 0, i32 0
+	%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_checkpoint_cstr, i32 %num)
+	ret void
 }
