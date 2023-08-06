@@ -55,6 +55,9 @@ E.g.:
 fn loop_5_forever = 0: 5 :0 goto
 
 fn loop_till_10 = 10 0 start: 1 add gte :start goif
+
+# Labels are local to the function they are defined in - the 0: label here does not conflict with the one in the function above and the :0 value here refers to this 0: label
+fn looop = 0: :0 goto
 ```
 (where the function `gte` pops 2 values off the stack and pushes `true` if the first is greater than or equal to the second, `false` otherwise)
 
