@@ -1,6 +1,6 @@
 jit: target/build.ll
 	lli $^ main.tower
 
-target/build.ll: src/main.ll
+target/build.ll: src/main.ll src/lexer.ll src/str_utils.ll
 	@mkdir -p target
-	llvm-link -o target/build.ll $^
+	llvm-link -S -o target/build.ll $^
