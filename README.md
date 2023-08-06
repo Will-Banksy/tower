@@ -32,13 +32,14 @@ It's essentially just postfix notation.
 
 The following types are (or will be) supported:
 
-| Type name | Description             | Literal example(s)   |
-| --------- | ----------------------- | -------------------- |
-| str       | ASCII string            | `"hello"`            |
-| bool      | Boolean                 | `true`, `false`      |
-| i64       | Signed 64-bit integer   | `-19725`, `1`, `64i` |
-| u64       | Unsigned 64-bit integer | `741u`               |
-| label     | Label value             | `:loop_start`, `:2`  |
+| Type name | Description                  | Literal example(s)   |
+| --------- | -----------------------      | -------------------- |
+| str       | ASCII string                 | `"hello"`            |
+| bool      | Boolean                      | `true`, `false`      |
+| i64       | Signed 64-bit integer        | `-19725`, `1`, `64i` |
+| u64       | Unsigned 64-bit integer      | `741u`               |
+| f64       | 64-bit floating-point number | `6.9`, `7f`          |
+| label     | Label value                  | `:loop_start`, `:2`  |
 
 ## Control Flow
 
