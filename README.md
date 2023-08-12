@@ -66,3 +66,21 @@ I'm undecided whether to support the combining of labels and label value literal
 ## Standard Library
 
 No standard library has been finalised yet. Ideally I'd like to have a way to define the standard library and whole language inside of itself, but most basic operations such as arithmetic and stack manipulation will for now need to be defined in the compiler/interpreter. C interop and low level functionality (inline IR?) might be a way forward, if I can think of a way to get that working.
+
+## C Interop Notes
+
+Current thinking is to in tower code declare an interface with syntax like below:
+
+```
+dynlib "libc.so" decl malloc/i32 -> i8*
+dynlib "libc.so" decl fseek/i8* i32 i32 -> i32
+```
+or
+```
+extern "libc.so" fn malloc/i32 -> i8*
+extern "libc.so" fn fseek/i8* i32 i32 -> i32
+```
+
+(The syntax is very much not finalised, the syntax for the function parameters should also probably be integrated into normal tower functions e.g. `fn main/i32 i8** -> i32 =` but maybe take more inspiration from factor's stack effect declarations like `fn shuffle/x y -> y x = y x` (some functions can be untyped? generics? and how is this enforced? This is getting a bit complicated. Maybe just leave it as returning types for now rather than whole stack effect declarations))
+
+And then dynamically load the library with dlopen and call functions with dlsym on posix, LoadLibrary and GetProcAddress on windows (meaning I have to link to the dl library on posix, think on windows should be good as kernel32.dll should be linked automatically) That's if I write an interpreter, a compiler to LLVM IR would be able to avoid that. But then I have to write a compiler.

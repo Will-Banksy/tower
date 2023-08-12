@@ -343,7 +343,7 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 
 		%code_char_colon_comp = icmp eq i8 %code_char, 58 ; ':'
 
-		br i1 %code_char_colon_comp, label %check-lab-literals-name, label %check-str-literals
+		br i1 %code_char_colon_comp, label %check-lab-literals-name, label %check-str-literals ; TODO: Once done check-num-literals, go to that label instead
 
 	check-lab-literals-name: ; Get the index of the end of the label name
 		%next_ws = call i32 @str_find_ws_or_end(i8* %code, i32 %code_idx, i32 %code_len)
@@ -358,7 +358,7 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 
 		br i1 %label_ident_name_comp, label %return-literal-lab, label %return-none
 
-	check-num-literals: ; TODO
+	check-num-literals: ; TODO Implement numeric literal parsing (there's some c library functions that can do this but I need to ensure it follows my rules)
 		br label %return-none
 
 	check-str-literals:
