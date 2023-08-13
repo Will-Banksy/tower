@@ -1,3 +1,9 @@
+; Forward declarations of used c library functions
+declare i8* @memcpy(i8*, i8*, i64) ; dest, source, source length -> dest
+declare double @strtod(i8*, i8**) ; number cstring, ptr to ptr to character..??? -> parsed double
+declare i64 @strtoul(i8*, i8**, i32) ; number cstring, ptr to ptr to character..???, base -> parsed ulong
+declare i64 @strtol(i8*, i8**, i32) ; number cstring, ptr to ptr to character..???, base -> parsed long
+
 ; Constants
 @ws_chars_str = private constant [4 x i8] c"\0A\0D\09\20" ; "\n\r\t "
 
@@ -191,4 +197,54 @@ define i32 @rcount_continuous(i8* %str, i8 %counting_char, i32 %lower_bound, i32
 		%ret_val = sub i32 %upper_bound, %i
 
 		ret i32 %ret_val
+}
+
+define i1 @is_num(i8 %char) {
+	%uge_0 = icmp uge i8 %char, 48
+	%ule_9 = icmp ule i8 %char, 57
+
+	%is_num = and i1 %uge_0, %ule_9
+	ret i1 %is_num
+}
+
+; Parse a 64-bit floating-point number using strtod.
+; Takes a non-null terminated string, copies it to a stack allocated buffer, adds the null terminator,
+; and then calls strtod and returns the result
+define double @parse_f64(i8* %str, i32 %str_len) {
+	%alloc_amt = add i32 %str_len, 1
+	%cstr = alloca i8, i32 %alloc_amt
+	%nullterm_ptr = getelementptr i8, i8* %cstr, i32 %str_len
+	store i8 0, i8* %nullterm_ptr
+	%str_len_u64 = zext i32 %str_len to i64
+	%1 = call i8* @memcpy(i8* %cstr, i8* %str, i64 %str_len_u64)
+	%res = call double @strtod(i8* %cstr, i8** null)
+	ret double %res
+}
+
+; Parse a 64-bit floating-point number using strtod.
+; Takes a non-null terminated string, copies it to a stack allocated buffer, adds the null terminator,
+; and then calls strtod and returns the result
+define i64 @parse_u64(i8* %str, i32 %str_len) {
+	%alloc_amt = add i32 %str_len, 1
+	%cstr = alloca i8, i32 %alloc_amt
+	%nullterm_ptr = getelementptr i8, i8* %cstr, i32 %str_len
+	store i8 0, i8* %nullterm_ptr
+	%str_len_u64 = zext i32 %str_len to i64
+	%1 = call i8* @memcpy(i8* %cstr, i8* %str, i64 %str_len_u64)
+	%res = call i64 @strtoul(i8* %cstr, i8** null, i32 0)
+	ret i64 %res
+}
+
+; Parse a 64-bit floating-point number using strtod.
+; Takes a non-null terminated string, copies it to a stack allocated buffer, adds the null terminator,
+; and then calls strtod and returns the result
+define i64 @parse_i64(i8* %str, i32 %str_len) {
+	%alloc_amt = add i32 %str_len, 1
+	%cstr = alloca i8, i32 %alloc_amt
+	%nullterm_ptr = getelementptr i8, i8* %cstr, i32 %str_len
+	store i8 0, i8* %nullterm_ptr
+	%str_len_u64 = zext i32 %str_len to i64
+	%1 = call i8* @memcpy(i8* %cstr, i8* %str, i64 %str_len_u64)
+	%res = call i64 @strtol(i8* %cstr, i8** null, i32 0)
+	ret i64 %res
 }

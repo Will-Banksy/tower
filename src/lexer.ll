@@ -9,6 +9,10 @@ declare i32 @str_find(i8* %str, i8 %seek_char, i32 %start, i32 %end)
 declare i32 @str_find_ws_or_end(i8* %str, i32 %start_idx, i32 %end_idx)
 declare i1 @is_ws(i8 %char)
 declare i32 @rcount_continuous(i8* %str, i8 %counting_char, i32 %lower_bound, i32 %upper_bound)
+declare i1 @is_num(i8 %char)
+declare double @parse_f64(i8* %str, i32 %str_len)
+declare i64 @parse_u64(i8* %str, i32 %str_len)
+declare i64 @parse_i64(i8* %str, i32 %str_len)
 
 @fmt_int_cstr = private constant [4 x i8] c"%i\0A\00"
 @fmt_uint_cstr = private constant [4 x i8] c"%u\0A\00"
@@ -26,7 +30,7 @@ declare i32 @rcount_continuous(i8* %str, i8 %counting_char, i32 %lower_bound, i3
 @literal_bool_true_str = private constant [4 x i8] c"true"
 
 ; Constants for tokens
-@token_size = private constant i32 16
+@token_size = private constant i32 20
 @token_attr_type = private constant i32 0
 @token_attr_subtype = private constant i32 1
 @token_attr_data = private constant i32 2
@@ -143,6 +147,9 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		%token_subtype_literal_label = load i32, i32* @token_subtype_literal_label
 		%token_subtype_literal_str = load i32, i32* @token_subtype_literal_str
 		%token_subtype_literal_bool = load i32, i32* @token_subtype_literal_bool
+		%token_subtype_literal_f64 = load i32, i32* @token_subtype_literal_f64
+		%token_subtype_literal_u64 = load i32, i32* @token_subtype_literal_u64
+		%token_subtype_literal_i64 = load i32, i32* @token_subtype_literal_i64
 
 		%dbg_lex_found_token_cstr = getelementptr [31 x i8], [31 x i8]* @dbg_lex_found_token_cstr, i32 0, i32 0
 
@@ -205,9 +212,9 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		br i1 %kwrd_fndef_comp, label %add-token, label %loop-body-literals
 
 	loop-body-literals: ; Check for literals using the @check_literal function
-		%literal_size_ptr = alloca i32
-		%literal_subtype = call i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal_size_ptr)
-		%literal_size = load i32, i32* %literal_size_ptr
+		%literal_code_size_ptr = alloca i32
+		%literal_subtype = call i32 @parse_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal_code_size_ptr, i8** null)
+		%literal_code_size = load i32, i32* %literal_code_size_ptr
 
 		; @token_subtype_literal_i64 = private constant i32 0
 		; @token_subtype_literal_u64 = private constant i32 1
@@ -221,7 +228,10 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		; TODO: Think about how I'm gonna handle token data
 		switch i32 %literal_subtype, label %loop-body-literals-none [ i32 5, label %loop-body-literals-labels
 		                                                              i32 4, label %loop-body-literals-strs
-																	  i32 3, label %loop-body-literals-bools ]
+																	  i32 3, label %loop-body-literals-bools
+																	  i32 2, label %loop-body-literals-f64
+																	  i32 1, label %loop-body-literals-u64
+																	  i32 0, label %loop-body-literals-i64 ]
 
 	loop-body-literals-labels:
 		br label %add-token
@@ -230,6 +240,15 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		br label %add-token
 
 	loop-body-literals-bools:
+		br label %add-token
+
+	loop-body-literals-f64:
+		br label %add-token
+
+	loop-body-literals-u64:
+		br label %add-token
+
+	loop-body-literals-i64:
 		br label %add-token
 
 	; TODO: The rest of the token types calling %add-token
@@ -249,31 +268,46 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		                      [ %token_type_keyword, %loop-body-kwrd-fndef ],
 		                      [ %token_type_literal, %loop-body-literals-labels ],
 		                      [ %token_type_literal, %loop-body-literals-strs ],
-		                      [ %token_type_literal, %loop-body-literals-bools ]
+		                      [ %token_type_literal, %loop-body-literals-bools ],
+		                      [ %token_type_literal, %loop-body-literals-f64 ],
+		                      [ %token_type_literal, %loop-body-literals-u64 ],
+		                      [ %token_type_literal, %loop-body-literals-i64 ]
 
 		%token_subtype = phi i32 [ %token_subtype_keyword_fn, %loop-body-kwrd-fn ],
 		                         [ %token_subtype_keyword_fndef, %loop-body-kwrd-fndef ],
 								 [ %token_subtype_literal_label, %loop-body-literals-labels ],
 								 [ %token_subtype_literal_str, %loop-body-literals-strs ],
-								 [ %token_subtype_literal_bool, %loop-body-literals-bools ]
+								 [ %token_subtype_literal_bool, %loop-body-literals-bools ],
+								 [ %token_subtype_literal_f64, %loop-body-literals-f64 ],
+								 [ %token_subtype_literal_u64, %loop-body-literals-u64 ],
+								 [ %token_subtype_literal_i64, %loop-body-literals-i64 ]
 
 		%token_data_len = phi i32 [ 0, %loop-body-kwrd-fn ],
 		                          [ 0, %loop-body-kwrd-fndef ],
 								  [ 0, %loop-body-literals-labels ],
 								  [ 0, %loop-body-literals-strs ],
-								  [ 0, %loop-body-literals-bools ]
+								  [ 0, %loop-body-literals-bools ],
+								  [ 0, %loop-body-literals-f64 ],
+								  [ 0, %loop-body-literals-u64 ],
+								  [ 0, %loop-body-literals-i64 ]
 
 		%token_data = phi i8* [ null, %loop-body-kwrd-fn ],
 		                      [ null, %loop-body-kwrd-fndef ],
 							  [ null, %loop-body-literals-labels ],
 							  [ null, %loop-body-literals-strs ],
-							  [ null, %loop-body-literals-bools ]
+							  [ null, %loop-body-literals-bools ],
+							  [ null, %loop-body-literals-f64 ],
+							  [ null, %loop-body-literals-u64 ],
+							  [ null, %loop-body-literals-i64 ]
 
 		%token_skip = phi i32 [ 2, %loop-body-kwrd-fn ],
 		                      [ 1, %loop-body-kwrd-fndef ],
-							  [ %literal_size, %loop-body-literals-labels ],
-							  [ %literal_size, %loop-body-literals-strs ],
-							  [ %literal_size, %loop-body-literals-bools ]
+							  [ %literal_code_size, %loop-body-literals-labels ],
+							  [ %literal_code_size, %loop-body-literals-strs ],
+							  [ %literal_code_size, %loop-body-literals-bools ],
+							  [ %literal_code_size, %loop-body-literals-f64 ],
+							  [ %literal_code_size, %loop-body-literals-u64 ],
+							  [ %literal_code_size, %loop-body-literals-i64 ]
 
 		; Print "Keyword found at index: %i" (where obviously the %i is the index)
 		%printf_ret = call i32 (i8*, ...) @printf(i8* %dbg_lex_found_token_cstr, i32 %code_idx)
@@ -311,9 +345,11 @@ define %Token* @tokenise(i8* %code, i32 %code_len, i32* %tokens_len_ptr) {
 		ret %Token* %tokens
 }
 
-; Checks that starting at %code_idx, a valid literal is present. Returns -1 if no literal was found,
-; or the number corresponding to the appropriate token subtype otherwise
-define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal_size) {
+; Parses a literal at %code_idx. Returns -1 if no literal was found,
+; or the number corresponding to the appropriate token subtype otherwise.
+; If literal is found, allocates space on heap and writes the literal data to it,
+; writing the pointer value to %literal_data_ptr
+define i32 @parse_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal_code_size, i8** %literal_data_ptr) {
 	; Literals: i64, u64, f64, str, bool, str, label
 
 	entry:
@@ -343,7 +379,7 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 
 		%code_char_colon_comp = icmp eq i8 %code_char, 58 ; ':'
 
-		br i1 %code_char_colon_comp, label %check-lab-literals-name, label %check-str-literals ; TODO: Once done check-num-literals, go to that label instead
+		br i1 %code_char_colon_comp, label %check-lab-literals-name, label %check-num-literals ; TODO: Once done check-num-literals, go to that label instead
 
 	check-lab-literals-name: ; Get the index of the end of the label name
 		%next_ws = call i32 @str_find_ws_or_end(i8* %code, i32 %code_idx, i32 %code_len)
@@ -359,7 +395,52 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 		br i1 %label_ident_name_comp, label %return-literal-lab, label %return-none
 
 	check-num-literals: ; TODO Implement numeric literal parsing (there's some c library functions that can do this but I need to ensure it follows my rules)
-		br label %return-none
+		call void @dbg_hit_checkpoint(i32 0)
+		; Check if the first character is a number
+		%is_char_num = call i1 @is_num(i8 %code_char)
+		br i1 %is_char_num, label %check-num-literals-check-decimal, label %check-str-literals
+
+	check-num-literals-check-decimal:
+		call void @dbg_hit_checkpoint(i32 1)
+		; Find the next ws or end, and then in that region try to find a '.'
+		%num_end_idx = call i32 @str_find_ws_or_end(i8* %code, i32 %code_idx, i32 %code_len)
+		%num_last_idx = sub i32 %num_end_idx, 1
+		%num_strlen = sub i32 %num_end_idx, %code_idx ; Used later
+		%num_decimal_pt_idx = call i32 @str_find(i8* %code, i8 46, i32 %code_idx, i32 %num_last_idx)
+		%num_has_decimal_pt_comp = icmp ne i32 %num_decimal_pt_idx, -1
+		br label %check-num-literals-check-suffix-f
+
+	check-num-literals-check-suffix-f:
+		%num_last_ptr = getelementptr i8, i8* %code, i32 %num_last_idx
+		%num_last_char = load i8, i8* %num_last_ptr
+		%num_explicitly_f = icmp eq i8 %num_last_char, 102 ; 'f'
+
+		%num_explicitly_typed_not_comp = call i1 @is_num(i8 %num_last_char)
+		%num_explicitly_typed_comp = xor i1 %num_explicitly_typed_not_comp, 1 ; NOT
+
+		%num_is_f64_comp = or i1 %num_has_decimal_pt_comp, %num_explicitly_f
+		br i1 %num_is_f64_comp, label %check-num-literals-f64, label %check-num-literals-check-suffix-u
+
+	check-num-literals-check-suffix-u:
+		call void @dbg_hit_checkpoint(i32 2)
+		%num_explicitly_u = icmp eq i8 %num_last_char, 117 ; 'u'
+
+		br i1 %num_explicitly_u, label %check-num-literals-u64, label %check-num-literals-i64
+
+	check-num-literals-f64:
+		%num_f64 = call double @parse_f64(i8* %code_char_ptr, i32 %num_strlen)
+		%token_subtype_literal_f64 = load i32, i32* @token_subtype_literal_f64
+		br label %return-literal-num
+
+	check-num-literals-u64:
+		%num_u64 = call i64 @parse_u64(i8* %code_char_ptr, i32 %num_strlen)
+		%token_subtype_literal_u64 = load i32, i32* @token_subtype_literal_u64
+		br label %return-literal-num
+
+	check-num-literals-i64:
+		%num_i64 = call i64 @parse_i64(i8* %code_char_ptr, i32 %num_strlen)
+		%token_subtype_literal_i64 = load i32, i32* @token_subtype_literal_i64
+		br label %return-literal-num
 
 	check-str-literals:
 		; If the current character is ", then search for an unescaped closing "
@@ -383,28 +464,40 @@ define i32 @check_literal(i8* %code, i32 %code_len, i32 %code_idx, i32* %literal
 
 	return-literal-bool:
 		%bool_lit_size = phi i32 [ 4, %check-bool-literals-true ], [ 5, %check-bool-literals-false ]
-		store i32 %bool_lit_size, i32* %literal_size
+		; TODO: Allocate and write literal data
+		store i32 %bool_lit_size, i32* %literal_code_size
 
 		%token_subtype_literal_bool = load i32, i32* @token_subtype_literal_bool
 		ret i32 %token_subtype_literal_bool
 
 	return-literal-lab:
 		%lab_lit_size = sub i32 %next_ws, %code_idx ; TODO: Is this the correct calculation?
-		store i32 %lab_lit_size, i32* %literal_size
+		; TODO: Allocate and write literal data
+		store i32 %lab_lit_size, i32* %literal_code_size
 
 		%token_subtype_literal_label = load i32, i32* @token_subtype_literal_label
 		ret i32 %token_subtype_literal_label
 
+	return-literal-num:
+		%num_lit_token_subtype = phi i32 [ %token_subtype_literal_f64, %check-num-literals-f64 ],
+		                                 [ %token_subtype_literal_u64, %check-num-literals-u64 ],
+		                                 [ %token_subtype_literal_i64, %check-num-literals-i64 ]
+		%num_lit_size = add i32 %num_strlen, 0
+		store i32 %num_lit_size, i32* %literal_code_size
+		; TODO: Allocate and write literal data
+		ret i32 %num_lit_token_subtype
+
 	return-literal-str:
 		%str_lit_size_minus_1 = sub i32 %maybe_close_quote_idx, %code_idx
+		; TODO: Allocate and write literal data
 		%str_lit_size = add i32 %str_lit_size_minus_1, 1
-		store i32 %str_lit_size, i32* %literal_size
+		store i32 %str_lit_size, i32* %literal_code_size
 
 		%token_subtype_literal_str = load i32, i32* @token_subtype_literal_str
 		ret i32 %token_subtype_literal_str
 
 	return-none:
-		store i32 0, i32* %literal_size
+		store i32 0, i32* %literal_code_size
 
 		ret i32 -1
 }

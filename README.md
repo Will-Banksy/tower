@@ -84,3 +84,9 @@ extern "libc.so" fn fseek/i8* i32 i32 -> i32
 (The syntax is very much not finalised, the syntax for the function parameters should also probably be integrated into normal tower functions e.g. `fn main/i32 i8** -> i32 =` but maybe take more inspiration from factor's stack effect declarations like `fn shuffle/x y -> y x = y x` (some functions can be untyped? generics? and how is this enforced? This is getting a bit complicated. Maybe just leave it as returning types for now rather than whole stack effect declarations))
 
 And then dynamically load the library with dlopen and call functions with dlsym on posix, LoadLibrary and GetProcAddress on windows (meaning I have to link to the dl library on posix, think on windows should be good as kernel32.dll should be linked automatically) That's if I write an interpreter, a compiler to LLVM IR would be able to avoid that. But then I have to write a compiler.
+
+## Control Flow Notes
+
+Inspired by Joy, one can perhaps wrap pieces of code and push them on the stack (like, lambda functions) and have functions that execute them depending on conditions, like `<bool> [ <if_true> ] if` and `<bool> [ <if_true> ] [ <if_false> ] ifelse`... hmm actually that does still require more primitive control flow... nah cause that can be implemented as the primitive control flow, just instead of functions use keywords. But maybe it can serve as a wrapper to more primitive control flow.
+
+I could also simply use the same sorta control flow as Forth, the `<bool> if <if_true> else <if_false> fi`... it is more readable than `<bool> :0 goif <if_false> :1 goto 0: <if_true> 1:`
