@@ -1,10 +1,10 @@
 # tower
 
-A simplistic stack-based programming language inspired by Factor with a compiler or interpreter (haven't decided yet) written in LLVM IR.
+A simplistic stack-based programming language inspired by Factor with a compiler or interpreter (haven't decided yet) written in ~~LLVM IR~~ Rust.
 
-Why LLVM IR? Mainly as a challenge.
+Why not LLVM IR anymore? Cause I feel I've got what I wanted from writing it, and it was just tedious from there - additionally, I started caring about the result of the project. I made more progress in Rust in a few hours than I did in LLVM IR in a few days.
 
-Extremely WIP, the lexer has not been finished yet, but the language design has been somewhat finalised, in my head anyway. This README serves as its documentation.
+Extremely WIP, the lexer has not been finished yet, and the language design isn't fully decided upon either. This README serves as its documentation and discussion.
 
 ## Concepts
 
@@ -40,6 +40,8 @@ The following types are (or will be) supported:
 | u64       | Unsigned 64-bit integer      | `741u`               |
 | f64       | 64-bit floating-point number | `6.9`, `7f`          |
 | label     | Label value                  | `:loop_start`, `:2`  |
+
+TODO: A function type and support for anonymous functions
 
 ## Control Flow
 
