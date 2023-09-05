@@ -6,6 +6,8 @@ Why not LLVM IR anymore? Cause I feel I've got what I wanted from writing it, an
 
 Extremely WIP, the lexer has not been finished yet, and the language design isn't fully decided upon either. This README serves as its documentation and discussion.
 
+TODO: Update this README
+
 ## Concepts
 
 In tower, all operations operate on a stack of values that is shared throughout the whole program.
@@ -39,11 +41,11 @@ The following types are (or will be) supported:
 | i64       | Signed 64-bit integer        | `-19725`, `1`, `64i` |
 | u64       | Unsigned 64-bit integer      | `741u`               |
 | f64       | 64-bit floating-point number | `6.9`, `7f`          |
-| label     | Label value                  | `:loop_start`, `:2`  |
-
-TODO: A function type and support for anonymous functions
+| fnptr     | Function pointer             | *n/a* (yet)          |
 
 ## Control Flow
+
+TODO: Update this section
 
 Control flow is done with labels and the keywords `goto` and `goif`.
 
@@ -69,7 +71,11 @@ I'm undecided whether to support the combining of labels and label value literal
 
 No standard library has been finalised yet. Ideally I'd like to have a way to define the standard library and whole language inside of itself, but most basic operations such as arithmetic and stack manipulation will for now need to be defined in the compiler/interpreter. C interop and low level functionality (inline IR?) might be a way forward, if I can think of a way to get that working.
 
-## C Interop Notes
+## Dev Notes
+
+TODO: Update this section
+
+### C Interop Notes
 
 Current thinking is to in tower code declare an interface with syntax like below:
 
@@ -87,7 +93,7 @@ extern "libc.so" fn fseek/i8* i32 i32 -> i32
 
 And then dynamically load the library with dlopen and call functions with dlsym on posix, LoadLibrary and GetProcAddress on windows (meaning I have to link to the dl library on posix, think on windows should be good as kernel32.dll should be linked automatically) That's if I write an interpreter, a compiler to LLVM IR would be able to avoid that. But then I have to write a compiler.
 
-## Control Flow Notes
+### Control Flow Notes
 
 Inspired by Joy, one can perhaps wrap pieces of code and push them on the stack (like, lambda functions) and have functions that execute them depending on conditions, like `<bool> [ <if_true> ] if` and `<bool> [ <if_true> ] [ <if_false> ] ifelse`... hmm actually that does still require more primitive control flow... nah cause that can be implemented as the primitive control flow, just instead of functions use keywords. But maybe it can serve as a wrapper to more primitive control flow.
 

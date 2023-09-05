@@ -1,30 +1,30 @@
-mod str_utils;
-
 use unicode_segmentation::UnicodeSegmentation;
 
-use self::str_utils::IsWhitespace;
+use crate::str_utils::IsWhitespace;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
 	Keyword(KeywordType), // fn, if, ifelse,
 	Identifier(String),
 	Literal(Literal),
+	FnOpen, // {
+	FnClose // }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum KeywordType {
 	Fn,
-	If,
-	IfElse,
+	FnDef // =
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Literal {
 	U64(u64),
 	I64(i64),
 	F64(f64),
 	Bool(bool),
 	String(String),
+	FnPtr(String)
 }
 
 pub struct ParsedToken {
@@ -80,13 +80,18 @@ pub fn tokenise(code: &str) -> Vec<Token> {
 	tokens
 }
 
-pub fn parse_token(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
+fn parse_token(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 	let tok = parse_keyword(code_gc, idx);
 	if tok.is_some() {
 		return tok;
 	}
 
 	let tok = parse_literal(code_gc, idx);
+	if tok.is_some() {
+		return tok;
+	}
+
+	let tok = parse_fndelims(code_gc, idx);
 	if tok.is_some() {
 		return tok;
 	}
@@ -99,34 +104,24 @@ pub fn parse_token(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 	None
 }
 
-pub fn parse_keyword(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
-	if code_gc.get(idx..(idx + 2))?.join("") == "fn" {
-		Some(ParsedToken::new(Token::Keyword(KeywordType::Fn), 2))
-	} else if code_gc.get(idx..(idx + 2))?.join("") == "if" {
-		Some(ParsedToken::new(Token::Keyword(KeywordType::If), 2))
-	} else if code_gc.get(idx..(idx + 6))?.join("") == "ifelse" {
-		Some(ParsedToken::new(Token::Keyword(KeywordType::IfElse), 6))
+fn parse_keyword(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
+	let (code, skip_amt) = get_until_whitespace(code_gc, idx);
+
+	if code == "fn" {
+		Some(ParsedToken::new(Token::Keyword(KeywordType::Fn), skip_amt))
+	} else if code == "=" {
+		Some(ParsedToken::new(Token::Keyword(KeywordType::FnDef), skip_amt))
 	} else {
 		None
 	}
 }
 
-pub fn parse_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
-	let (code, skip_amt) = {
-		let ws_idx = code_gc[idx..].iter().position(|gc| gc.is_whitespace());
-		if let Some(ws_idx) = ws_idx {
-			let ws_idx = ws_idx + idx;
-			(code_gc[idx..ws_idx].join(""), ws_idx - idx)
-		} else {
-			(code_gc[idx..].join(""), code_gc.len() - idx)
-		}
-	};
+fn parse_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
+	let (code, skip_amt) = get_until_whitespace(code_gc, idx);
 
-	println!("Skip amt: {}, idx: {}", skip_amt, idx);
+	// println!("Skip amt: {}, idx: {}", skip_amt, idx);
 
 	let last_char = code_gc[idx + skip_amt - 1];
-
-	println!("Last char: {}", last_char);
 
 	if last_char != "f" && last_char != "i" {
 		let lit_u64 = {
@@ -178,7 +173,7 @@ pub fn parse_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 	None
 }
 
-pub fn parse_str_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
+fn parse_str_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 	if code_gc[idx] == "\"" {
 		let mut num_backslashes_before = 0;
 		let mut str_end_idx = 0;
@@ -195,7 +190,7 @@ pub fn parse_str_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 
 		let parsed_str = code_gc[(idx + 1)..str_end_idx].join("");
 
-		println!("Parsed string: \"{}\"", parsed_str);
+		// println!("Parsed string: \"{}\"", parsed_str);
 
 		return Some(
 			ParsedToken::new(
@@ -210,6 +205,31 @@ pub fn parse_str_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 	None
 }
 
-pub fn parse_identifier(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
-	todo!() // TODO
+fn parse_identifier(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
+	// TODO: Decide on restrictions for identifiers... for now I'm just gonna accept anything
+	let (code, skip_amt) = get_until_whitespace(code_gc, idx);
+
+	Some(ParsedToken::new(Token::Identifier(code), skip_amt))
+}
+
+fn parse_fndelims(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
+	let (code, _) = get_until_whitespace(code_gc, idx);
+
+	if code == "{" {
+		Some(ParsedToken::new(Token::FnOpen, 1))
+	} else if code == "}" {
+		Some(ParsedToken::new(Token::FnClose, 1))
+	} else {
+		None
+	}
+}
+
+fn get_until_whitespace(code_gc: &[&str], idx: usize) -> (String, usize) {
+	let ws_idx = code_gc[idx..].iter().position(|gc| gc.is_whitespace());
+	if let Some(ws_idx) = ws_idx {
+		let ws_idx = ws_idx + idx;
+		(code_gc[idx..ws_idx].join(""), ws_idx - idx)
+	} else {
+		(code_gc[idx..].join(""), code_gc.len() - idx)
+	}
 }
