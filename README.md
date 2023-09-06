@@ -17,18 +17,33 @@ This does mean that the responsibility of ensuring functions are provided all re
 
 ## Syntax
 
-Top level tower code is composed entirely of comments and the arguably more exciting function declarations.
+Top level tower code is currently composed entirely of comments and the arguably more exciting function declarations. Since all functions operate on a stack rather than taking arguments and returning values, tower code is essentially just postfix notation.
 
-Comments begin with `#`, and end at the end of the line, bash style.
+### Comments
 
-Function declarations take the form `fn function_name =` followed by the function body, primarily made of what I call *nouns* and *verbs*, but what are essentially just literals and function invocations. Keywords and labels are also present.
-All are separated by any ascii whitespace, and function names must be composed of underscores and ASCII alphanumeric characters (but can't start with a number).
+Comments begin with `#`, and end at the end of the line, bash style. This also allows shebangs.
 
-A *noun* is a literal value, that, when execution reaches it, is pushed onto the program stack. You can think of it as an instruction to push a value onto the stack. E.g. the function `fn hello = "hello"` will simply push the string "hello" onto the stack and then return.
+### (Named) Functions
 
-A *verb* is a function invocation that operates on the current stack. E.g. the function `fn main = 5 5 add` will push the value 5 onto the stack twice and call the `add` function, which pops 2 values off the stack and adds them together, and then pushes the result onto the stack.
+Function declarations take the form `fn function_name =` followed by the function body, and terminated with a `;`.
 
-It's essentially just postfix notation.
+The function body is a list of literals, words (function calls), and keywords. Literals are like an instruction to push a value on to the stack - E.g. `fn hello = "hello" ;` is a function that simply pushes "hello" onto the stack and then returns. Words are simply the name of a function, which when execution reaches it that function is called - E.g. `fn hello = print_hello ;` is a function that simply calls the `print_hello` function then returns. The only keywords that can appear in a function body are the `{` `}` keywords, denoting the start and end of an anonymous function.
+
+### Anonymous Functions
+
+Anonymous functions are, as their name suggests, functions without a name. They are declared inline inside a function body between a pair of curly brackets `{` `}`. Anything that goes inside a normal/named function body can go inside an anonymous function body.
+
+At parsing, anonymous functions are extracted into a named function with a unique name, and the original declaration turned into a fnptr literal to that uniquely named function, so when execution reaches an anonymous function declaration, a fnptr to the extracted anonymous function is pushed onto the stack.
+
+Anonymous functions are extremely useful for control flow, as they remove the need to declare a named function for each control flow target.
+
+Example:
+```
+fn main = { "inside an anonymous function" println } dup println call
+```
+Output:
+> anon_*&lt;unique sequence of numbers and dashes&gt;*\
+> inside an anonymous function
 
 ## Types
 
@@ -36,44 +51,54 @@ The following types are (or will be) supported:
 
 | Type name | Description                  | Literal example(s)   |
 | --------- | -----------------------      | -------------------- |
-| str       | ASCII string                 | `"hello"`            |
+| str       | UTF-8 string                 | `"hello"`, `"✨"`    |
 | bool      | Boolean                      | `true`, `false`      |
 | i64       | Signed 64-bit integer        | `-19725`, `1`, `64i` |
 | u64       | Unsigned 64-bit integer      | `741u`               |
 | f64       | 64-bit floating-point number | `6.9`, `7f`          |
-| fnptr     | Function pointer             | *n/a* (yet)          |
+| fnptr     | Function pointer             | `&function_name`     |
+
+TODO: Support different integer sizes, and rethink how data is stored on the stack
 
 ## Control Flow
 
-TODO: Update this section
+Branching is done by using the instructions `if` and `ifelse` with fnptrs. Usually, the fnptrs will be anonymous functions.
 
-Control flow is done with labels and the keywords `goto` and `goif`.
 
-Labels are much like in other languages, where the syntax is `label_name:`. Label names follow the same rules as function names but can start with a number.
-There is a distinction between labels, used for marking a goto destination in the code, and label values, used for indicating which label to go to.
+The `if` instruction expects a fnptr and bool on the stack, and if the bool is `true` then the fnptr is called, otherwise nothing happens.
 
-Usage of the `goto` and `goif` keywords is much like normal functions. `goto` pops a label value off of the stack and jumps to the corresponding label, and `goif` pops a label value and a bool off the stack and if that bool is `true` then jumps to the corresponding label.
-
-E.g.:
+Example usage:
 ```
-fn loop_5_forever = 0: 5 :0 goto
-
-fn loop_till_10 = 10 0 start: 1 add gte :start goif
-
-# Labels are local to the function they are defined in - the 0: label here does not conflict with the one in the function above and the :0 value here refers to this 0: label
-fn looop = 0: :0 goto
+fn main = true { "hello world" println } if
 ```
-(where the function `gte` pops 2 values off the stack and pushes `true` if the first is greater than or equal to the second, `false` otherwise)
+Output:
+> hello world
 
-I'm undecided whether to support the combining of labels and label value literals into one: `start:start`.
+The `ifelse` instruction expects two fnptrs and a bool on the stack, and if the bool is true then the first fnptr is called, otherwise the second is.
+
+Example usage:
+```
+fn main = 1 2 eq { "equal" } { "not equal" } ifelse
+```
+Output:
+> not equal
+
+Loops are done using the `while` instruction, which expects a fnptr and a bool on the stack, much like `if`. `while` pops the two arguments off the stack, and if the bool is true, the fnptr gets called. After that, `while` expects another bool on the stack, and if that is true, the fnptr gets called again.
+
+Example usage:
+```
+fn main = 0 true { 1 add dup dup print 10 ne " " print } while
+```
+Output:
+> 1 2 3 4 5 6 7 8 9 10
 
 ## Standard Library
 
-No standard library has been finalised yet. Ideally I'd like to have a way to define the standard library and whole language inside of itself, but most basic operations such as arithmetic and stack manipulation will for now need to be defined in the compiler/interpreter. C interop and low level functionality (inline IR?) might be a way forward, if I can think of a way to get that working.
+No standard library has been finalised yet. Currently, there are a few functions such as `print`, `dup`, `add`, etc. that are implemented in the interpreter, known internally as *instructions*.
+
+Ideally I'd like to have a way to define the standard library and whole language inside of itself, but most basic operations such as arithmetic and stack manipulation will for now need to be defined in the compiler/interpreter (function argument binding would be a way to move stack manipulation to be writable in pure tower). C/rust interop and low level functionality (inline IR?) might be a way forward, if I can think of a way to get that working.
 
 ## Dev Notes
-
-TODO: Update this section
 
 ### C Interop Notes
 
@@ -92,9 +117,3 @@ extern "libc.so" fn fseek/i8* i32 i32 -> i32
 (The syntax is very much not finalised, the syntax for the function parameters should also probably be integrated into normal tower functions e.g. `fn main/i32 i8** -> i32 =` but maybe take more inspiration from factor's stack effect declarations like `fn shuffle/x y -> y x = y x` (some functions can be untyped? generics? and how is this enforced? This is getting a bit complicated. Maybe just leave it as returning types for now rather than whole stack effect declarations))
 
 And then dynamically load the library with dlopen and call functions with dlsym on posix, LoadLibrary and GetProcAddress on windows (meaning I have to link to the dl library on posix, think on windows should be good as kernel32.dll should be linked automatically) That's if I write an interpreter, a compiler to LLVM IR would be able to avoid that. But then I have to write a compiler.
-
-### Control Flow Notes
-
-Inspired by Joy, one can perhaps wrap pieces of code and push them on the stack (like, lambda functions) and have functions that execute them depending on conditions, like `<bool> [ <if_true> ] if` and `<bool> [ <if_true> ] [ <if_false> ] ifelse`... hmm actually that does still require more primitive control flow... nah cause that can be implemented as the primitive control flow, just instead of functions use keywords. But maybe it can serve as a wrapper to more primitive control flow.
-
-I could also simply use the same sorta control flow as Forth, the `<bool> if <if_true> else <if_false> fi`... it is more readable than `<bool> :0 goif <if_false> :1 goto 0: <if_true> 1:`

@@ -4,17 +4,18 @@ use crate::str_utils::IsWhitespace;
 
 #[derive(Debug, Clone)]
 pub enum Token {
-	Keyword(KeywordType), // fn, if, ifelse,
+	Keyword(KeywordType),
 	Identifier(String),
 	Literal(Literal),
-	FnOpen, // {
-	FnClose // }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum KeywordType {
-	Fn,
-	FnDef // =
+	Fn, // fn
+	FnDef, // =
+	FnEnd, // ;
+	AnonFnOpen, // {
+	AnonFnClose, // }
 }
 
 #[derive(Debug, Clone)]
@@ -91,11 +92,6 @@ fn parse_token(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 		return tok;
 	}
 
-	let tok = parse_fndelims(code_gc, idx);
-	if tok.is_some() {
-		return tok;
-	}
-
 	let tok = parse_identifier(code_gc, idx);
 	if tok.is_some() {
 		return tok;
@@ -111,6 +107,12 @@ fn parse_keyword(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 		Some(ParsedToken::new(Token::Keyword(KeywordType::Fn), skip_amt))
 	} else if code == "=" {
 		Some(ParsedToken::new(Token::Keyword(KeywordType::FnDef), skip_amt))
+	} else if code == ";" {
+		Some(ParsedToken::new(Token::Keyword(KeywordType::FnEnd), skip_amt))
+	} else if code == "{" {
+		Some(ParsedToken::new(Token::Keyword(KeywordType::AnonFnOpen), skip_amt))
+	} else if code == "}" {
+		Some(ParsedToken::new(Token::Keyword(KeywordType::AnonFnClose), skip_amt))
 	} else {
 		None
 	}
@@ -209,19 +211,12 @@ fn parse_identifier(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 	// TODO: Decide on restrictions for identifiers... for now I'm just gonna accept anything
 	let (code, skip_amt) = get_until_whitespace(code_gc, idx);
 
-	Some(ParsedToken::new(Token::Identifier(code), skip_amt))
-}
-
-fn parse_fndelims(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
-	let (code, _) = get_until_whitespace(code_gc, idx);
-
-	if code == "{" {
-		Some(ParsedToken::new(Token::FnOpen, 1))
-	} else if code == "}" {
-		Some(ParsedToken::new(Token::FnClose, 1))
+	if code_gc[idx] == "&" {
+		Some(ParsedToken::new(Token::Literal(Literal::FnPtr(code_gc[(idx + 1)..(idx + skip_amt)].join(""))), skip_amt))
 	} else {
-		None
+		Some(ParsedToken::new(Token::Identifier(code), skip_amt))
 	}
+
 }
 
 fn get_until_whitespace(code_gc: &[&str], idx: usize) -> (String, usize) {

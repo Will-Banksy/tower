@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use crate::{parser::{ASTNode, Instruction}, lexer::Literal};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum StackItem {
+pub enum StackItem { // TODO: Each StackItem is currently 24 bytes. This is not ideal.
 	U64(u64),
 	I64(i64),
 	F64(f64),
@@ -13,41 +13,43 @@ pub enum StackItem {
 }
 
 pub fn interp(program: ASTNode) -> Result<(), String> {
-	if let ASTNode::Program(mut fns) = program {
-		add_instructions(&mut fns);
+	if let ASTNode::Module(mut mod_content) = program {
+		add_instructions(&mut mod_content);
 
 		let mut stack: Vec<StackItem> = Vec::new();
 
-		exec_fn(&mut stack, &fns, "main")?;
+		exec_fn(&mut stack, &mod_content, "main")?;
 
 		Ok(())
 	} else {
-		Err("[ERROR]: Not a program".to_string())
+		Err("[ERROR]: Not a module".to_string())
 	}
 }
 
 fn exec_fn(stack: &mut Vec<StackItem>, fns: &HashMap<String, ASTNode>, fn_name: &str) -> Result<(), String> {
 	let func = fns.get(fn_name).ok_or(format!("[ERROR]: No function with name: \"{}\"", fn_name))?;
 
-	match func {
-		ASTNode::Function(fn_body) => {
-			for node in fn_body {
-				let res = exec_node(stack, fns, node);
-				if res.is_err() {
-					return res;
-				}
-			}
-			Ok(())
-		},
-		ASTNode::Instruction(func) => func(stack, fns),
-		_ => unimplemented!("[PARSER ERROR]: Top level item should be either a function or instruction")
-	}
+	exec_node(stack, fns, func)
+
+	// match func {
+	// 	ASTNode::Function(fn_body) => {
+	// 		for node in fn_body {
+	// 			let res = exec_node(stack, fns, node);
+	// 			if res.is_err() {
+	// 				return res;
+	// 			}
+	// 		}
+	// 		Ok(())
+	// 	},
+	// 	ASTNode::Instruction(func) => func(stack, fns),
+	// 	_ => unimplemented!("[PARSER ERROR]: Top level item should be either a function or instruction")
+	// }
 }
 
 fn exec_node(stack: &mut Vec<StackItem>, fns: &HashMap<String, ASTNode>, node: &ASTNode) -> Result<(), String> {
 	match node {
-		ASTNode::Program(_) => unimplemented!(),
-		ASTNode::Function(_) => unimplemented!(),
+		ASTNode::Module(_) => unimplemented!(),
+		ASTNode::Function(node) => exec_node(stack, fns, node),
 		ASTNode::Keyword(_) => unimplemented!(),
 		ASTNode::Literal(lit) => {
 			let item = lit_to_stackitem(lit);
@@ -55,7 +57,16 @@ fn exec_node(stack: &mut Vec<StackItem>, fns: &HashMap<String, ASTNode>, node: &
 			Ok(())
 		},
 		ASTNode::Word(word) => exec_fn(stack, fns, word),
-		ASTNode::Instruction(_) => unimplemented!(),
+		ASTNode::Instruction(func) => func(stack, fns),
+		ASTNode::Block(blck_body) => {
+			for node in blck_body {
+				let res = exec_node(stack, fns, node);
+				if res.is_err() {
+					return res;
+				}
+			}
+			Ok(())
+		}
 	}
 }
 
@@ -179,7 +190,7 @@ fn add_instructions(program: &mut HashMap<String, ASTNode>) {
 			}) as Instruction
 		),
 		(
-			"for".into(),
+			"while".into(),
 			Box::new(|stack: &mut Vec<StackItem>, context: &HashMap<String, ASTNode>| -> Result<(), String> {
 				let fnptr = stack.pop().ok_or(ERR_EMPTY)?;
 				let cond = stack.pop().ok_or(ERR_EMPTY)?;
