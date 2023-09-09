@@ -8,11 +8,11 @@ pub enum StackItem { // TODO: Each StackItem is currently 24 bytes. This is not 
 	I64(i64),
 	F64(f64),
 	Bool(bool),
-	StrPtr(Rc<str>), // TODO: Optimise handling of strings - Store each equal string once and pass around Rcs
+	StrPtr(Rc<str>), // TODO: Optimise handling of strings - Store each equal string once and pass around Rcs or better yet does im have structurally shared strings...
 	FnPtr(Rc<str>),
 }
 
-pub fn interp(program: ASTNode) -> Result<(), String> {
+pub fn interp(program: ASTNode) -> Result<(), String> { // TODO: Make the tower language compatible with and interpreter able to run as a REPL
 	if let ASTNode::Module(mut mod_content) = program {
 		add_instructions(&mut mod_content);
 

@@ -2,7 +2,7 @@ use tower::{lexer::tokenise, parser::parse_tokens, interpreter::interp};
 
 fn main() {
 	let towercode = include_str!("../main.tower");
-	let tokens = tokenise(towercode);
+	let tokens = tokenise(towercode).unwrap();
 	// println!("TOKENS: {:?}", tokens);
 
 	let ast = parse_tokens(tokens);

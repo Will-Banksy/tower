@@ -1,5 +1,5 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use crate::{lexer::{Literal, Token, KeywordType}, interpreter::StackItem};
 
@@ -13,6 +13,67 @@ pub enum ASTNode {
 	Word(String),
 	Instruction(Instruction),
 	Block(Vec<ASTNode>),
+}
+
+#[derive(PartialEq)]
+pub enum PrimitiveType {
+	U64,
+	I64,
+	F64,
+	Bool,
+	StrPtr,
+	FnPtr
+}
+
+#[derive(Clone)]
+pub struct StackEffect {
+	popped: Rc<Vec<PrimitiveType>>,
+	pushed: Rc<Vec<PrimitiveType>>
+}
+
+impl StackEffect {
+	fn new(popped: Vec<PrimitiveType>, pushed: Vec<PrimitiveType>) -> Self {
+		StackEffect { popped: Rc::new(popped), pushed: Rc::new(pushed) }
+	}
+
+	fn new_popped(popped: Vec<PrimitiveType>) -> Self {
+		Self::new(popped, Vec::new())
+	}
+
+	fn new_pushed(pushed: Vec<PrimitiveType>) -> Self {
+		Self::new(Vec::new(), pushed)
+	}
+
+	fn combine(mut self, next: &StackEffect) -> Result<StackEffect, String> {
+		// let mut next = next.clone();
+
+		// let mut extra_pops = Vec::new();
+		// let mut extra_pushes = Vec::new();
+
+		// if next.popped.len() >= self.pushed.len() {
+		// 	let mut i = 0;
+		// 	while i < next.popped.len() {
+		// 		let j = self.pushed.len() - 1 - i;
+		// 		if let Some(push) = self.pushed.get(j) {
+		// 			if *push == next.popped[i] {
+		// 				next.pushed.remove(j);
+		// 				self.popped.remove(i);
+		// 				i -= 1;
+		// 			}
+		// 		} else {
+		// 			extra_pops.push(next.popped.len());
+		// 		}
+		// 	}
+		// }
+
+		todo!()
+	}
+}
+
+impl Default for StackEffect {
+	fn default() -> Self {
+		StackEffect { popped: Rc::new(Vec::new()), pushed: Rc::new(Vec::new()) }
+	}
 }
 
 impl fmt::Debug for ASTNode {
@@ -113,5 +174,26 @@ fn token_to_node(token: Token) -> Option<ASTNode> {
 		Some(ASTNode::Keyword(kw_val))
 	} else {
 		None
+	}
+}
+
+fn stack_effect_for(tles: &HashMap<String, ASTNode>, node: &ASTNode) -> StackEffect {
+	match node {
+		ASTNode::Module(_) => unimplemented!(),
+		ASTNode::Keyword(_) => unimplemented!(), // After parsing, there won't be any keywords
+		ASTNode::Instruction(_) => todo!(), // TODO: Add some mechanism for declaring the stack effect in the instructions - Although there won't actually be any instructions at this point, they get added in the interpreter
+		ASTNode::Function(fn_node) => stack_effect_for(tles, fn_node),
+		ASTNode::Literal(lit) => {
+			match lit {
+				Literal::U64(_) => StackEffect::new_pushed(vec![PrimitiveType::U64]),
+				Literal::I64(_) => StackEffect::new_pushed(vec![PrimitiveType::I64]),
+				Literal::F64(_) => StackEffect::new_pushed(vec![PrimitiveType::F64]),
+				Literal::Bool(_) => StackEffect::new_pushed(vec![PrimitiveType::Bool]),
+				Literal::String(_) => StackEffect::new_pushed(vec![PrimitiveType::StrPtr]),
+				Literal::FnPtr(_) => StackEffect::new_pushed(vec![PrimitiveType::FnPtr]),
+			}
+		},
+		ASTNode::Block(_) => todo!(), // TODO: Need to implement the StackEffect::combine method for this
+		ASTNode::Word(word) => tles.get(word).map(|func| stack_effect_for(tles, func)).unwrap_or(StackEffect::default())
 	}
 }

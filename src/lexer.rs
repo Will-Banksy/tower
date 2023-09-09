@@ -40,7 +40,7 @@ impl ParsedToken {
 	}
 }
 
-pub fn tokenise(code: &str) -> Vec<Token> {
+pub fn tokenise(code: &str) -> Result<Vec<Token>, String> {
 	let mut tokens = Vec::new();
 
 	// let words: Vec<&str> = code.split_whitespace().collect();
@@ -64,7 +64,7 @@ pub fn tokenise(code: &str) -> Vec<Token> {
 			}
 			prev_ws = true;
 		} else if prev_ws {
-			let parsed_token = parse_token(&code_chars, i);
+			let parsed_token = parse_token(&code_chars, i)?;
 			if let Some(ptok) = parsed_token {
 				tokens.push(ptok.token);
 				i += ptok.len;
@@ -78,26 +78,26 @@ pub fn tokenise(code: &str) -> Vec<Token> {
 		}
 	}
 
-	tokens
+	Ok(tokens)
 }
 
-fn parse_token(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
+fn parse_token(code_gc: &[&str], idx: usize) -> Result<Option<ParsedToken>, String> {
 	let tok = parse_keyword(code_gc, idx);
 	if tok.is_some() {
-		return tok;
+		return Ok(tok);
 	}
 
-	let tok = parse_literal(code_gc, idx);
+	let tok = parse_literal(code_gc, idx)?;
 	if tok.is_some() {
-		return tok;
+		return Ok(tok);
 	}
 
 	let tok = parse_identifier(code_gc, idx);
 	if tok.is_some() {
-		return tok;
+		return Ok(tok);
 	}
 
-	None
+	Ok(None)
 }
 
 fn parse_keyword(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
@@ -118,7 +118,7 @@ fn parse_keyword(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 	}
 }
 
-fn parse_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
+fn parse_literal(code_gc: &[&str], idx: usize) -> Result<Option<ParsedToken>, String> {
 	let (code, skip_amt) = get_until_whitespace(code_gc, idx);
 
 	// println!("Skip amt: {}, idx: {}", skip_amt, idx);
@@ -134,7 +134,7 @@ fn parse_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 			}
 		};
 		if let Ok(lit_val) = lit_u64 {
-			return Some(ParsedToken::new(Token::Literal(Literal::U64(lit_val)), skip_amt))
+			return Ok(Some(ParsedToken::new(Token::Literal(Literal::U64(lit_val)), skip_amt)))
 		}
 	}
 
@@ -147,7 +147,7 @@ fn parse_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 			}
 		};
 		if let Ok(lit_val) = lit_i64 {
-			return Some(ParsedToken::new(Token::Literal(Literal::I64(lit_val)), skip_amt))
+			return Ok(Some(ParsedToken::new(Token::Literal(Literal::I64(lit_val)), skip_amt)))
 		}
 	}
 
@@ -159,52 +159,87 @@ fn parse_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
 		}
 	};
 	if let Ok(lit_val) = lit_f64 {
-		return Some(ParsedToken::new(Token::Literal(Literal::F64(lit_val)), skip_amt))
+		return Ok(Some(ParsedToken::new(Token::Literal(Literal::F64(lit_val)), skip_amt)))
 	}
 
 	let lit_bool = code.parse::<bool>();
 	if let Ok(lit_val) = lit_bool {
-		return Some(ParsedToken::new(Token::Literal(Literal::Bool(lit_val)), skip_amt))
+		return Ok(Some(ParsedToken::new(Token::Literal(Literal::Bool(lit_val)), skip_amt)))
 	}
 
-	let lit_str = parse_str_literal(code_gc, idx);
+	let lit_str = parse_str_literal(code_gc, idx)?;
 	if lit_str.is_some() {
-		return lit_str;
+		return Ok(lit_str);
 	}
 
-	None
+	Ok(None)
 }
 
-fn parse_str_literal(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
+fn parse_str_literal(code_gc: &[&str], idx: usize) -> Result<Option<ParsedToken>, String> {
 	if code_gc[idx] == "\"" {
-		let mut num_backslashes_before = 0;
-		let mut str_end_idx = 0;
-		for i in (idx + 1)..code_gc.len() {
-			if code_gc[i] == "\\" {
-				num_backslashes_before += 1;
-			} else if code_gc[i] == "\"" && num_backslashes_before % 2 == 0 { // not escaped
-				str_end_idx = i;
+		let mut sb = String::new();
+
+		let mut i = idx + 1;
+		let mut escaped = false;
+		while i < code_gc.len() {
+			if escaped {
+				escaped = false;
+				if code_gc[i] == "\"" {
+					sb.push('"');
+				} else if code_gc[i] == "\\" {
+					sb.push('\\');
+				} else if code_gc[i] == "n" {
+					sb.push('\n');
+				} else if code_gc[i] == "t" {
+					sb.push('\t');
+				} else if code_gc[i] == "r" {
+					sb.push('\r');
+				} else if code_gc[i] == "0" {
+					sb.push('\0');
+				} else if code_gc[i] == "u" {
+					if let Some(&"{") = code_gc.get(i + 1) {
+						i += 2;
+						let mut u_hex_chars = 0;
+						while i < code_gc.len() {
+							if code_gc[i] == "}" {
+								break;
+							} else {
+								u_hex_chars += 1;
+								i += 1;
+							}
+						}
+						let u_start = i - u_hex_chars;
+						let hex_str = code_gc[u_start..i].join("");
+
+						let invalid_code_pt_err = Err(format!("[ERROR]: Value {} is not a valid unicode code point", hex_str));
+						if u_hex_chars > 6 {
+							return invalid_code_pt_err;
+						}
+
+						let hex_val = u32::from_str_radix(&hex_str.trim(), 16).map_err(|e| format!("[ERROR]: Failed to convert hex string {} to u32: {}", hex_str, e))?;
+						if let Some(code_point) = char::from_u32(hex_val) {
+							sb.push(code_point)
+						} else {
+							return invalid_code_pt_err;
+						}
+					} else {
+						return Err("[ERROR]: Expected { in unicode escape \\u{...}".into())
+					}
+				}
+			} else if code_gc[i] == "\\" {
+				escaped = true;
+			} else if code_gc[i] == "\"" {
 				break;
 			} else {
-				num_backslashes_before = 0;
+				sb.push_str(code_gc[i])
 			}
+			i += 1;
 		}
 
-		let parsed_str = code_gc[(idx + 1)..str_end_idx].join("");
-
-		// println!("Parsed string: \"{}\"", parsed_str);
-
-		return Some(
-			ParsedToken::new(
-				Token::Literal(
-					Literal::String(parsed_str)
-				),
-				(str_end_idx - idx) + 1
-			)
-		);
+		return Ok(Some(ParsedToken::new(Token::Literal(Literal::String(sb)), i - idx)))
 	}
 
-	None
+	Ok(None)
 }
 
 fn parse_identifier(code_gc: &[&str], idx: usize) -> Option<ParsedToken> {
