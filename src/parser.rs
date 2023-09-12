@@ -1,29 +1,36 @@
 use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
-use crate::{lexer::{Literal, Token, KeywordType}, interpreter::StackItem};
+use crate::{lexer::{Literal, Token, KeywordType}, interpreter::StackItem, analyser::{StackEffect, AnnotatedASTNode}};
 
-pub type Instruction = Box<dyn Fn(&mut Vec<StackItem>, &HashMap<String, ASTNode>) -> Result<(), String>>;
+pub type Instruction = Rc<dyn Fn(&mut Vec<StackItem>, &HashMap<String, ASTNode>) -> Result<(), String>>;
 
+#[derive(Clone)]
 pub enum ASTNode {
-	Module(HashMap<String, ASTNode>),
+	Module(HashMap<String, ASTNode>, Option<String>),
 	Function(Box<ASTNode>),
 	Keyword(KeywordType),
 	Literal(Literal),
 	Word(String),
-	Instruction(Instruction),
+	Instruction(Instruction, StackEffect),
 	Block(Vec<ASTNode>),
+}
+
+impl ASTNode {
+	pub fn annotated(self, effect: StackEffect) -> AnnotatedASTNode {
+		AnnotatedASTNode::new(self, effect)
+	}
 }
 
 impl fmt::Debug for ASTNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Module(arg0) => f.debug_tuple("Program").field(arg0).finish(),
+            Self::Module(arg0, arg1) => f.debug_tuple("Program").field(arg0).finish(),
             Self::Function(arg0) => f.debug_tuple("Function").field(arg0).finish(),
             Self::Keyword(arg0) => f.debug_tuple("Keyword").field(arg0).finish(),
             Self::Literal(arg0) => f.debug_tuple("Literal").field(arg0).finish(),
             Self::Word(arg0) => f.debug_tuple("Word").field(arg0).finish(),
-            Self::Instruction(_) => f.debug_tuple("Instruction").finish(),
+            Self::Instruction(_, arg1) => f.debug_tuple("Instruction").field(arg1).finish(),
             Self::Block(arg0) => f.debug_tuple("Block").field(arg0).finish(),
         }
     }
@@ -62,7 +69,7 @@ pub fn parse_tokens(tokens: Vec<Token>) -> ASTNode { // TODO: Develop a system f
 		i += 1;
 	}
 
-	ASTNode::Module(tles)
+	ASTNode::Module(tles, Some("main".into()))
 }
 
 fn define_anon_fns(tles: &mut HashMap<String, ASTNode>, tokens: &mut Vec<Token>) {

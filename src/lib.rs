@@ -3,7 +3,9 @@ pub mod str_utils;
 pub mod lexer;
 /// Contins the parser: Performs parsing or syntactic analysis over a stream of tokens to produce an Abstract Syntax Tree (AST)
 pub mod parser;
-/// Contains the analyser: Performs semantic analysis over an AST to validate its correctness and perhaps perform optimisations
+/// Contains the analyser: Performs semantic analysis over an AST to validate its correctness and perhaps perform optimisations and monomorphisation
 pub mod analyser;
 /// Contains the interpreter - A runtime that takes an AST representation of tower code and executes it according to tower's rules
 pub mod interpreter;
+/// Contains defined instructions - compiler-defined functions
+pub mod instructions;
