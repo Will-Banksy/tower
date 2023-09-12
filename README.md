@@ -15,9 +15,15 @@ In tower, all operations operate on a stack of values that is shared throughout 
 Functions do not have parameters, since they operate directly on the stack, and so any arguments you want to pass to a function have to be pushed onto the stack.
 This does mean that the responsibility of ensuring functions are provided all required arguments falls upon the programmer.
 
+Currently being worked on though is a system of checking *stack effects*, where the exact inputs and outputs of every function are checked to make sure they are correct, much like type checking in most languages - this really requires generics and as a dependency of that, traits/interfaces, which are also planned. Further along, a method of type erasure will be made where the constraints of the stack effect checking is too restrictive.
+
 ## Syntax
 
 Top level tower code is currently composed entirely of comments and the arguably more exciting function declarations. Since all functions operate on a stack rather than taking arguments and returning values, tower code is essentially just postfix notation.
+
+UTF-8 is fully supported, so that identifiers can be constructed out of *any* unicode characters except whitespace, or in ways that would identify it as another token type such as a numeric literal. E.g. `fn ✨ = "sparkle" println ;` is valid but `fn "sparkle" = "✨" println ;` is not.
+
+Of note is that right now, all tokens are whitespace delimited. E.g. `fn main = 1 println ;` is valid but `fn main=1 println;` is not - `main=1` will be parsed as a single identifier, as will `println;` and due to the lack of the `=` and `;` tokens the function declaration will not make it through parsing.
 
 ### Comments
 
@@ -42,7 +48,7 @@ Example:
 fn main = { "inside an anonymous function" println } dup println call
 ```
 Output:
-> anon_*&lt;unique sequence of numbers and dashes&gt;*\
+> &anon_*&lt;unique sequence of numbers and dashes&gt;*\
 > inside an anonymous function
 
 ## Types
@@ -59,6 +65,20 @@ The following types are (or will be) supported:
 | fnptr     | Function pointer             | `&function_name`     |
 
 TODO: Support different integer sizes, and rethink how data is stored on the stack
+
+TODO: Also support Algebraic Data Types (ADTs), where the type would be e.g. `bool | i64` and to deconstruct it you use `match` keyword/instruction, which has stack effect e.g. `bool | i64 -> T`, where `T` is the type returned from the anon fns passed to `match` (there may be multiple things returned... how might the stack effect reflect that...? Maybe it just copies the output of the anon fns as it's stack effect... be nice if I could do it in a less special case way tho). Also as we might need named variants, can do something like `None | Some(i64)`
+
+### String Literals
+
+String literals are enclosed in `""` and are UTF-8 compatible. All whitespace in the string literal is included in the final string. Escape sequences similar to in other languages are supported.
+
+Supported escape sequences:
+- `\n` - newline
+- `\r` - carriage return
+- `\t` - tab
+- `\0` - null character
+- `\\` - single backslash
+- `\u{######}` - specified unicode code point, in hex, up to 6 digits
 
 ## Control Flow
 
