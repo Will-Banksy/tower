@@ -1,17 +1,6 @@
 use std::{collections::HashMap, fmt::{Display, Write}};
 
-use crate::{parser::{ASTNode, Instruction}, lexer::Literal, instructions::instructions};
-
-pub struct AnnotatedASTNode {
-	pub node: ASTNode,
-	pub effect: StackEffect
-}
-
-impl AnnotatedASTNode {
-	pub fn new(node: ASTNode, effect: StackEffect) -> Self {
-		AnnotatedASTNode { node, effect }
-	}
-}
+use crate::{instructions::instructions, lexer::Literal, parser::{ASTNode, AnnotatedASTNode, Instruction, NodeId}};
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum PrimitiveType {
@@ -66,13 +55,16 @@ impl StackEffect {
 		StackEffect { popped: im::Vector::new(), pushed: im::Vector::new() }
 	}
 
-	pub fn combine(mut self, mut next: StackEffect) -> Result<StackEffect, String> {
+	pub fn combine(mut self, mut next: StackEffect) -> Result<StackEffect, String> { // TODO: Check/test this function to see whether it is correct
 		while self.pushed.len() > 0 && next.popped.len() > 0 {
 			let pushed = self.pushed.pop_back().unwrap();
 			let popped = next.popped.pop_front().unwrap();
 			if pushed == popped {
+				() // good, true
 			} else if let PrimitiveType::Generic(_) = pushed {
+				// TODO
 			} else if let PrimitiveType::Generic(_) = popped {
+				// TODO
 			} else {
 				return Err(format!("[ERROR]: Incompatible types {:?} and {:?}", pushed, popped))
 			}
@@ -115,22 +107,24 @@ impl Display for StackEffect {
     }
 }
 
-pub fn stack_effect_for(tles: &HashMap<String, ASTNode>, node: &ASTNode) -> Result<StackEffect, String> {
-	match node {
+/// Walk recursively through the AST, starting at node, calculating stack effects.
+// BUG: Cannot handle recursive patterns, i.e. a function calling itself
+pub fn calc_stack_effects(tles: &HashMap<String, AnnotatedASTNode>, node: &AnnotatedASTNode, effects: &mut HashMap<NodeId, StackEffect>) -> Result<StackEffect, String> {
+	if let Some(effect) = effects.get(&node.id) {
+		return Ok(effect.clone());
+	}
+
+	let effect = match &node.node {
 		ASTNode::Module(tles, entry_point) => {
-			if let Some(entry_point) = entry_point {
-				if let Some(entry_fn) = tles.get(entry_point) {
-					stack_effect_for(tles, entry_fn)
-				} else {
-					Err(format!("[ERROR]: Entry point \"{}\" not found", entry_point))
-				}
+			if let Some(entry_fn) = tles.get(entry_point) {
+				calc_stack_effects(&tles, entry_fn, effects)
 			} else {
-				unimplemented!()
+				Err(format!("[ERROR]: Entry point \"{}\" not found", entry_point))
 			}
 		},
 		ASTNode::Keyword(_) => unimplemented!(), // After parsing, there won't be any keywords
-		ASTNode::Instruction(_, effect) => Ok(effect.clone()), // TODO: Add some mechanism for declaring the stack effect in the instructions - Although there won't actually be any instructions at this point, they get added in the interpreter
-		ASTNode::Function(fn_node) => stack_effect_for(tles, fn_node),
+		ASTNode::Instruction(_) => unimplemented!(), // No instructions at this point, and if there were execution wouldn't reach here anyway cause all instructions have effects from the start
+		ASTNode::Function(fn_node) => calc_stack_effects(tles, &fn_node, effects),
 		ASTNode::Literal(lit) => {
 			match lit {
 				Literal::U64(_) => Ok(StackEffect::new_pushed(im::vector![PrimitiveType::U64])),
@@ -144,22 +138,33 @@ pub fn stack_effect_for(tles: &HashMap<String, ASTNode>, node: &ASTNode) -> Resu
 		ASTNode::Block(nodes) => {
 			let mut accum = StackEffect::none();
 			for node in nodes {
-				accum = accum.combine(stack_effect_for(tles, node)?)?;
+				accum = accum.combine(calc_stack_effects(tles, &node, effects)?)?;
 			}
 			Ok(accum)
 		},
-		ASTNode::Word(word) => tles.get(word).map(|func| stack_effect_for(tles, func)).unwrap_or(Err(format!("[ERROR]: No function {}", word)))
-	}
+		ASTNode::Word(word) => tles.get(word).map(|func| calc_stack_effects(tles, func, effects)).unwrap_or(Err(format!("[ERROR]: No function {}", word))) // NOTE: Will fail at instruction names if they are not added with stack effects at this point
+	}?;
+	effects.insert(node.id, effect.clone());
+	Ok(effect)
 }
 
 /// Performs semantic analysis - Defines instructions and checks stack effects
-pub fn analyse(ast: ASTNode) -> Result<AnnotatedASTNode, String> {
-	// TODO: Figure out a way of pairing every ASTNode with a StackEffect, in 1 pass.
-	// This would necessitate a function like stack_effect_for but that when it recurses on deeper nested ASTNodes,
-	// it also pairs them with a StackEffect in a way that propagates up. A HashMap<ASTNode, StackEffect> would be great
-	// but I can't really use an ASTNode as a hashmap key unfortunately.
-	// ALSO need to do monomorphisation
-	todo!()
+pub fn analyse(ast: &mut AnnotatedASTNode, node_id: &mut NodeId) -> Result<HashMap<NodeId, StackEffect>, String> {
+	// TODO: ALSO need to do monomorphisation and figure out generics
+
+	let mut effects: HashMap<NodeId, StackEffect> = HashMap::new();
+
+	if let ASTNode::Module(tles, _) = &mut ast.node {
+		add_instructions(tles, &mut effects, node_id);
+
+		for (_, tle) in &*tles {
+			calc_stack_effects(tles, tle, &mut effects)?;
+		}
+	}
+
+	Ok(effects)
+
+	// todo!()
 
 	// if let ASTNode::Module(mut tles, entry_point) = ast {
 	// 	add_instructions(&mut tles);
@@ -183,10 +188,11 @@ pub fn analyse(ast: ASTNode) -> Result<AnnotatedASTNode, String> {
 	// }
 }
 
-fn add_instructions(program: &mut HashMap<String, ASTNode>) {
+fn add_instructions(program: &mut HashMap<String, AnnotatedASTNode>, effects: &mut HashMap<NodeId, StackEffect>, node_id: &mut NodeId) {
 	let instructions: im::HashMap<String, (Instruction, StackEffect)> = instructions();
 
 	for (instruct_name, (instruct_body, instruct_effect)) in instructions {
-		program.insert(instruct_name.to_string(), ASTNode::Instruction(instruct_body, instruct_effect));
+		program.insert(instruct_name.to_string(), AnnotatedASTNode::new(ASTNode::Instruction(instruct_body), node_id.inc()));
+		effects.insert(*node_id, instruct_effect);
 	}
 }

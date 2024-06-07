@@ -1,13 +1,13 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{parser::{Instruction, ASTNode}, interpreter::{StackItem, exec_fn}, analyser::{StackEffect, PrimitiveType}};
+use crate::{analyser::{PrimitiveType, StackEffect}, interpreter::{exec_fn, StackItem}, parser::{AnnotatedASTNode, Instruction}};
 
 pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 	const ERR_EMPTY: &'static str = "[ERROR]: Stack empty";
 
 	im::hashmap! {
 		"print".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				match stack.pop().ok_or(ERR_EMPTY)? {
 					StackItem::U64(n) => { print!("{}", n); Ok(()) },
 					StackItem::I64(n) => { print!("{}", n); Ok(()) },
@@ -20,7 +20,7 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 			StackEffect::new_popped(im::vector![PrimitiveType::Generic("T".into())])
 		),
 		"println".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				match stack.pop().ok_or(ERR_EMPTY)? {
 					StackItem::U64(n) => { println!("{}", n); Ok(()) },
 					StackItem::I64(n) => { println!("{}", n); Ok(()) },
@@ -33,7 +33,7 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 			StackEffect::new_popped(im::vector![PrimitiveType::Generic("T".into())])
 		),
 		"call".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, context: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, context: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				match stack.pop().ok_or(ERR_EMPTY)? {
 					StackItem::FnPtr(f) => {
 						exec_fn(stack, &context, &f)
@@ -44,14 +44,14 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 			StackEffect::new_popped(im::vector![PrimitiveType::FnPtr])
 		),
 		"dup".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				stack.push(stack.last().ok_or(ERR_EMPTY)?.clone());
 				Ok(())
 			}) as Instruction,
 			StackEffect::new(im::vector![PrimitiveType::Generic("T".into())], im::vector![PrimitiveType::Generic("T".into()), PrimitiveType::Generic("T".into())])
 		),
 		"eq".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				let lhs = stack.pop().ok_or(ERR_EMPTY)?;
 				let rhs = stack.pop().ok_or(ERR_EMPTY)?;
 				let res = lhs == rhs;
@@ -61,7 +61,7 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 			StackEffect::new_popped(im::vector![PrimitiveType::Generic("L".into()), PrimitiveType::Generic("R".into())])
 		),
 		"ne".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				let lhs = stack.pop().ok_or(ERR_EMPTY)?;
 				let rhs = stack.pop().ok_or(ERR_EMPTY)?;
 				let res = lhs != rhs;
@@ -71,7 +71,7 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 			StackEffect::new_popped(im::vector![PrimitiveType::Generic("L".into()), PrimitiveType::Generic("R".into())])
 		),
 		"if".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, context: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, context: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				let fnptr = stack.pop().ok_or(ERR_EMPTY)?;
 				let cond = stack.pop().ok_or(ERR_EMPTY)?;
 				if let StackItem::Bool(val) = cond {
@@ -88,7 +88,7 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 			StackEffect::new_popped(im::vector![PrimitiveType::FnPtr, PrimitiveType::Bool])
 		),
 		"ifelse".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, context: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, context: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				let fnptr_else = stack.pop().ok_or(ERR_EMPTY)?;
 				let fnptr_if = stack.pop().ok_or(ERR_EMPTY)?;
 				let cond = stack.pop().ok_or(ERR_EMPTY)?;
@@ -111,7 +111,7 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 			StackEffect::new_popped(im::vector![PrimitiveType::FnPtr, PrimitiveType::FnPtr, PrimitiveType::Bool])
 		),
 		"while".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, context: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, context: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				let fnptr = stack.pop().ok_or(ERR_EMPTY)?;
 				let cond = stack.pop().ok_or(ERR_EMPTY)?;
 
@@ -142,7 +142,7 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 			StackEffect::new_popped(im::vector![PrimitiveType::FnPtr, PrimitiveType::Bool])
 		),
 		"add".into() => (
-			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, ASTNode>| -> Result<(), String> {
+			Rc::new(|stack: &mut Vec<StackItem>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), String> {
 				let lhs = stack.pop().ok_or(ERR_EMPTY)?;
 				let rhs = stack.pop().ok_or(ERR_EMPTY)?;
 				match lhs {

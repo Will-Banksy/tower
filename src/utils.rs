@@ -7,3 +7,14 @@ impl IsWhitespace for &str {
 		self.trim().len() == 0
 	}
 }
+
+pub trait IncrementMut {
+	fn increment(&mut self) -> Self;
+}
+
+impl IncrementMut for u64 {
+	fn increment(&mut self) -> Self {
+		*self += 1;
+		*self
+	}
+}

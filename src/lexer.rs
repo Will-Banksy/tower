@@ -1,6 +1,8 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::str_utils::IsWhitespace;
+use crate::utils::IsWhitespace;
+
+// TODO: Better parsing method: https://depth-first.com/articles/2021/12/16/a-beginners-guide-to-parsing-in-rust/
 
 #[derive(Debug, Clone)]
 pub enum Token {
@@ -16,6 +18,7 @@ pub enum KeywordType {
 	FnEnd, // ;
 	AnonFnOpen, // {
 	AnonFnClose, // }
+	ReorderBefore, // <- // NOTE: This will be syntax sugar for more natural usage of ifs, ifelses, etc. e.g. "if <- <conditional> <if-true>" vs <conditional> <if-true> if" // TODO
 }
 
 #[derive(Debug, Clone)]

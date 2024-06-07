@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{parser::{ASTNode, Instruction}, lexer::Literal, instructions::instructions, analyser::StackEffect};
+use crate::{lexer::Literal, parser::{ASTNode, AnnotatedASTNode}};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum StackItem { // TODO: Each StackItem is currently 24 bytes. This is not ideal.
@@ -12,29 +12,29 @@ pub enum StackItem { // TODO: Each StackItem is currently 24 bytes. This is not 
 	FnPtr(Rc<str>),
 }
 
-pub fn interp(program: ASTNode) -> Result<(), String> { // TODO: Make the tower language compatible with and interpreter able to run as a REPL
-	if let ASTNode::Module(tles, entry_point) = program {
+pub fn interp(program: AnnotatedASTNode) -> Result<(), String> { // TODO: Make the tower language compatible with and interpreter able to run as a REPL
+	if let ASTNode::Module(tles, entry_point) = &program.node {
 		let mut stack: Vec<StackItem> = Vec::new();
 
-		if let Some(entry_point) = entry_point {
-			exec_fn(&mut stack, &tles, &entry_point)?;
-			Ok(())
-		} else {
-			Err("[ERROR]: No defined entry point".into())
-		}
+		// if let Some(entry_point) = entry_point {
+		exec_fn(&mut stack, &tles, &entry_point)?;
+		Ok(())
+		// } else {
+		// 	Err("[ERROR]: No defined entry point".into())
+		// }
 	} else {
 		Err("[ERROR]: Not a module".to_string())
 	}
 }
 
-pub(crate) fn exec_fn(stack: &mut Vec<StackItem>, fns: &HashMap<String, ASTNode>, fn_name: &str) -> Result<(), String> {
+pub(crate) fn exec_fn(stack: &mut Vec<StackItem>, fns: &HashMap<String, AnnotatedASTNode>, fn_name: &str) -> Result<(), String> {
 	let func = fns.get(fn_name).ok_or(format!("[ERROR]: No function with name: \"{}\"", fn_name))?;
 
 	exec_node(stack, fns, func)
 }
 
-pub(crate) fn exec_node(stack: &mut Vec<StackItem>, fns: &HashMap<String, ASTNode>, node: &ASTNode) -> Result<(), String> {
-	match node {
+pub(crate) fn exec_node(stack: &mut Vec<StackItem>, fns: &HashMap<String, AnnotatedASTNode>, node: &AnnotatedASTNode) -> Result<(), String> {
+	match &node.node {
 		ASTNode::Module(_, _) => unimplemented!(),
 		ASTNode::Function(node) => exec_node(stack, fns, node),
 		ASTNode::Keyword(_) => unimplemented!(),
@@ -44,7 +44,7 @@ pub(crate) fn exec_node(stack: &mut Vec<StackItem>, fns: &HashMap<String, ASTNod
 			Ok(())
 		},
 		ASTNode::Word(word) => exec_fn(stack, fns, word),
-		ASTNode::Instruction(func, _) => func(stack, fns),
+		ASTNode::Instruction(func) => func(stack, fns),
 		ASTNode::Block(blck_body) => {
 			for node in blck_body {
 				let res = exec_node(stack, fns, node);
