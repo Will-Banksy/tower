@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::{Display, Write}};
 use crate::{instructions::instructions, lexer::Literal, parser::{ASTNode, AnnotatedASTNode, Instruction, NodeId}};
 
 #[derive(PartialEq, Clone, Debug)]
-pub enum PrimitiveType {
+pub enum TowerType {
 	U64,
 	I64,
 	F64,
@@ -13,17 +13,17 @@ pub enum PrimitiveType {
 	Generic(String)
 }
 
-impl Display for PrimitiveType {
+impl Display for TowerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let gen_fmt_str;
         let string = match self {
-            PrimitiveType::U64 => "u64",
-            PrimitiveType::I64 => "i64",
-            PrimitiveType::F64 => "f64",
-            PrimitiveType::Bool => "bool",
-            PrimitiveType::StrPtr => "strptr",
-            PrimitiveType::FnPtr => "fnptr",
-			PrimitiveType::Generic(tident) => {
+            TowerType::U64 => "u64",
+            TowerType::I64 => "i64",
+            TowerType::F64 => "f64",
+            TowerType::Bool => "bool",
+            TowerType::StrPtr => "strptr",
+            TowerType::FnPtr => "fnptr",
+			TowerType::Generic(tident) => {
 				gen_fmt_str = format!("<{}>", tident);
 				&gen_fmt_str
 			},
@@ -34,20 +34,20 @@ impl Display for PrimitiveType {
 
 #[derive(Clone, Debug)]
 pub struct StackEffect {
-	popped: im::Vector<PrimitiveType>,
-	pushed: im::Vector<PrimitiveType>
+	popped: im::Vector<TowerType>,
+	pushed: im::Vector<TowerType>
 }
 
 impl StackEffect {
-	pub fn new(popped: im::Vector<PrimitiveType>, pushed: im::Vector<PrimitiveType>) -> Self {
+	pub fn new(popped: im::Vector<TowerType>, pushed: im::Vector<TowerType>) -> Self {
 		StackEffect { popped, pushed }
 	}
 
-	pub fn new_popped(popped: im::Vector<PrimitiveType>) -> Self {
+	pub fn new_popped(popped: im::Vector<TowerType>) -> Self {
 		Self::new(popped, im::Vector::new())
 	}
 
-	pub fn new_pushed(pushed: im::Vector<PrimitiveType>) -> Self {
+	pub fn new_pushed(pushed: im::Vector<TowerType>) -> Self {
 		Self::new(im::Vector::new(), pushed)
 	}
 
@@ -55,16 +55,23 @@ impl StackEffect {
 		StackEffect { popped: im::Vector::new(), pushed: im::Vector::new() }
 	}
 
-	pub fn combine(mut self, mut next: StackEffect) -> Result<StackEffect, String> { // TODO: Check/test this function to see whether it is correct
+	pub fn combine(mut self, mut next: StackEffect) -> Result<StackEffect, String> {
 		while self.pushed.len() > 0 && next.popped.len() > 0 {
 			let pushed = self.pushed.pop_back().unwrap();
 			let popped = next.popped.pop_front().unwrap();
 			if pushed == popped {
 				() // good, true
-			} else if let PrimitiveType::Generic(_) = pushed {
-				// TODO
-			} else if let PrimitiveType::Generic(_) = popped {
-				// TODO
+			} else if let TowerType::Generic(_) = pushed {
+				if let TowerType::Generic(_) = popped {
+					// TODO: Check whether generic types are compatible
+				}
+				// TODO: Check whether pushed generic type is compatible with popped concrete type - Or instead delegate this decision to the popper
+
+				todo!() // NOTE: Generics are temporarily disabled
+			} else if let TowerType::Generic(_) = popped {
+				// TODO: Check whether the pushed concrete type is compatible with the popped generic type
+
+				todo!()
 			} else {
 				return Err(format!("[ERROR]: Incompatible types {:?} and {:?}", pushed, popped))
 			}
@@ -127,12 +134,12 @@ pub fn calc_stack_effects(tles: &HashMap<String, AnnotatedASTNode>, node: &Annot
 		ASTNode::Function(fn_node) => calc_stack_effects(tles, &fn_node, effects),
 		ASTNode::Literal(lit) => {
 			match lit {
-				Literal::U64(_) => Ok(StackEffect::new_pushed(im::vector![PrimitiveType::U64])),
-				Literal::I64(_) => Ok(StackEffect::new_pushed(im::vector![PrimitiveType::I64])),
-				Literal::F64(_) => Ok(StackEffect::new_pushed(im::vector![PrimitiveType::F64])),
-				Literal::Bool(_) => Ok(StackEffect::new_pushed(im::vector![PrimitiveType::Bool])),
-				Literal::String(_) => Ok(StackEffect::new_pushed(im::vector![PrimitiveType::StrPtr])),
-				Literal::FnPtr(_) => Ok(StackEffect::new_pushed(im::vector![PrimitiveType::FnPtr])),
+				Literal::U64(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::U64])),
+				Literal::I64(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::I64])),
+				Literal::F64(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::F64])),
+				Literal::Bool(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::Bool])),
+				Literal::String(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::StrPtr])),
+				Literal::FnPtr(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::FnPtr])),
 			}
 		},
 		ASTNode::Block(nodes) => {
@@ -142,7 +149,7 @@ pub fn calc_stack_effects(tles: &HashMap<String, AnnotatedASTNode>, node: &Annot
 			}
 			Ok(accum)
 		},
-		ASTNode::Word(word) => tles.get(word).map(|func| calc_stack_effects(tles, func, effects)).unwrap_or(Err(format!("[ERROR]: No function {}", word))) // NOTE: Will fail at instruction names if they are not added with stack effects at this point
+		ASTNode::Word(word) => tles.get(word).map(|func| calc_stack_effects(tles, func, effects)).unwrap_or(Err(format!("[ERROR]: No function {}", word))) // Will fail at instruction names if they are not added with stack effects at this point
 	}?;
 	effects.insert(node.id, effect.clone());
 	Ok(effect)

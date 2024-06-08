@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use tower::{analyser::{analyse, StackEffect}, interpreter::interp, lexer::tokenise, parser::{parse_tokens, ASTNode, AnnotatedASTNode, NodeId}};
+use tower::{analyser::{analyse, StackEffect}, interpreter::interp, lexer::tokenise, parser::{parse_tokens, ASTNode, AnnotatedASTNode, NodeId}, stack::TowerStack};
 
 // TODO: Rethink error handling. Look at resources for error handling in compilers/interpreters. Maybe use log crate, maybe don't. Need context-aware errors too
 
@@ -30,7 +30,10 @@ fn main() {
 	// println!("\n\nSTACK EFFECTS: {:?}", effects);
 
 	println!("\n\nINTERPRETER STARTING...");
-	interp(ast).expect("Interpreter encountered an error");
+	let stack = Vec::<u8>::new();
+	if let Err(e) = interp(ast, &mut (Box::new(stack) as Box<dyn TowerStack>)) {
+		eprintln!("Runtime Error: {e:?}");
+	}
 }
 
 fn print_detailed_ast(ast: &AnnotatedASTNode, effects: &HashMap<NodeId, StackEffect>, depth: u32) -> String { // TODO: Refactor to actually use the depth for printing (it's a mess rn)

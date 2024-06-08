@@ -1,9 +1,9 @@
 use core::fmt;
 use std::{collections::HashMap, ops::Deref, rc::Rc};
 
-use crate::{interpreter::StackItem, lexer::{KeywordType, Literal, Token}};
+use crate::{error::RuntimeError, lexer::{KeywordType, Literal, Token}, stack::TowerStack};
 
-pub type Instruction = Rc<dyn Fn(&mut Vec<StackItem>, &HashMap<String, AnnotatedASTNode>) -> Result<(), String>>;
+pub type Instruction = Rc<dyn Fn(&mut Box<dyn TowerStack>, &HashMap<String, AnnotatedASTNode>) -> Result<(), RuntimeError>>;
 
 #[derive(Clone)]
 pub enum ASTNode<N: Clone> {

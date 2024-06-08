@@ -9,3 +9,7 @@ pub mod analyser;
 pub mod interpreter;
 /// Contains defined instructions - compiler-defined functions
 pub mod instructions;
+/// Contains extension method for operating on a Vec<u8> as the program stack
+pub mod stack;
+/// Contains error types
+pub mod error;
