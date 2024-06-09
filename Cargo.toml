@@ -9,3 +9,5 @@ edition = "2021"
 unicode-segmentation = "1.10.1"
 uuid = { version = "1.4.1", features = [ "v4" ] }
 im = "15.1.0"
+lyn = "0.1.0"
+unicode-xid = "0.2.4"

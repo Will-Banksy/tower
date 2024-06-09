@@ -1,0 +1,16 @@
+(* // TODO: Figure out the syntax and notation of EBNF grammar - Or pick one of the many available *)
+
+module ::= { [s], function, [s] } ;
+
+function ::= "fn", s, identifier, [s], block ;
+
+block ::= "{", { [s], identifier | literal }, [s], "}" ;
+
+(* Same definition of identifiers that Rust uses - derived from unicode rules for identifiers *)
+identifier ::= (xid-start | "_"), xid-continue* ;
+
+literal ::= string_literal ;
+
+string_literal ::= '"', ? special string handling ?, '"' ;
+
+s ::= ( " " | "\t" | "\n" | "\r" )+ ;
