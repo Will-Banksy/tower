@@ -1,17 +1,25 @@
 use std::collections::HashMap;
 
-use tower::{analyser::{analyse, StackEffect}, interpreter::interp, lexer::tokenise, parser::{parse_tokens, ASTNode, AnnotatedASTNode, NodeId}, stack::TowerStack};
+use tower::{analyser::{analyse, StackEffect}, interpreter::interp, lexer::tokenise, parser::{parse_tokens, ASTNode, AnnotatedASTNode, NodeId}, parser_new::{self, scanner::Scanner}, stack::TowerStack};
 
 // TODO: Rethink error handling. Look at resources for error handling in compilers/interpreters. Maybe use log crate, maybe don't. Need context-aware errors too
 
 fn main() {
 	let towercode = include_str!("../main.tower");
-	let tokens = tokenise(towercode).unwrap();
+	// let tokens = tokenise(towercode).unwrap();
 	// println!("TOKENS: {:?}", tokens);
 
 	let mut node_id = NodeId::new();
 
-	let mut ast = parse_tokens(tokens, &mut node_id);
+	let mut scanner = Scanner::new(&towercode);
+	let mut ast = match parser_new::parse(&mut scanner, &mut node_id) {
+		Ok(ast) => ast,
+		Err(e) => {
+			e.print_error(&scanner, "main.tower", std::io::stderr()).unwrap();
+			return;
+		}
+	}.annotated(node_id.inc());
+
 	let effects = analyse(&mut ast, &mut node_id).unwrap();
 
 	// println!("\n\nABSTRACT SYNTAX TREE: {:#?}", ast);
@@ -42,7 +50,7 @@ fn print_detailed_ast(ast: &AnnotatedASTNode, effects: &HashMap<NodeId, StackEff
 		ASTNode::Function(node) => format!("Function({})", print_detailed_ast(node, effects, depth + 1)),
 		ASTNode::Keyword(_) => unimplemented!(),
 		ASTNode::Literal(lit) => format!("Literal({lit:?}, stack_effect: {})", effects.get(&ast.id).unwrap()),
-		ASTNode::Word(word) => format!("Word({word}, stack_effect: {})", effects.get(&ast.id).unwrap()),
+		ASTNode::Identifier(word) => format!("Word({word}, stack_effect: {})", effects.get(&ast.id).unwrap()),
 		ASTNode::Instruction(_) => format!("Instruction(stack_effect: {})", effects.get(&ast.id).unwrap()),
 		ASTNode::Block(nodes) => format!("Block(nodes: [\n{}\t], stack_effect: {})", nodes.iter().map(|node| format!("\t\t{},\n", print_detailed_ast(node, effects, depth + 1))).collect::<String>(), effects.get(&ast.id).unwrap()),
 	}

@@ -30,7 +30,7 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 
 				Ok(())
 			}) as Instruction,
-			StackEffect::new_popped(im::vector![TowerType::StrPtr])
+			StackEffect::new(im::vector![TowerType::StrPtr], im::vector![TowerType::StrPtr, TowerType::StrPtr])
 		),
 		"if".into() => (
 			Rc::new(|stack: &mut Box<dyn TowerStack>, symbols: &HashMap<String, AnnotatedASTNode>| -> Result<(), RuntimeError> {

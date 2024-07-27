@@ -11,7 +11,8 @@ pub enum ASTNode<N: Clone> {
 	Function(Box<N>), // Box is just so the enum isn't recursive in size
 	Keyword(KeywordType),
 	Literal(Literal),
-	Word(String),
+	Identifier(String),
+	/// NOTE: This should not be used
 	Instruction(Instruction),
 	Block(Vec<N>),
 }
@@ -28,7 +29,7 @@ pub struct NodeId {
 }
 
 impl NodeId {
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		NodeId {
 			inner: 0
 		}
@@ -70,15 +71,11 @@ impl AnnotatedASTNode {
 // 	pub effect: Option<StackEffect>
 // }
 
-// impl ASTNode {
-// 	pub fn annotated(self, effect: StackEffect) -> AnnotatedASTNode {
-// 		AnnotatedASTNode::new(self, effect)
-// 	}
-
-// 	pub fn annotated_empty(self) -> AnnotatedASTNode {
-// 		AnnotatedASTNode::new_empty(self)
-// 	}
-// }
+impl ASTNode<AnnotatedASTNode> {
+	pub fn annotated(self, id: NodeId) -> AnnotatedASTNode {
+		AnnotatedASTNode::new(self, id)
+	}
+}
 
 impl<N> fmt::Debug for ASTNode<N> where N: Clone + fmt::Debug {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -87,7 +84,7 @@ impl<N> fmt::Debug for ASTNode<N> where N: Clone + fmt::Debug {
 			ASTNode::Function(arg0) => f.debug_tuple("Function").field(arg0).finish(),
 			ASTNode::Keyword(arg0) => f.debug_tuple("Keyword").field(arg0).finish(),
 			ASTNode::Literal(arg0) => f.debug_tuple("Literal").field(arg0).finish(),
-			ASTNode::Word(arg0) => f.debug_tuple("Word").field(arg0).finish(),
+			ASTNode::Identifier(arg0) => f.debug_tuple("Word").field(arg0).finish(),
 			ASTNode::Instruction(_) => f.debug_tuple("Instruction").finish(),
 			ASTNode::Block(arg0) => f.debug_tuple("Block").field(arg0).finish(),
 		}
@@ -190,7 +187,7 @@ fn token_to_node(token: Token, id: &mut NodeId) -> Option<AnnotatedASTNode> {
 	if let Token::Literal(lit_val) = token {
 		Some(AnnotatedASTNode::new(ASTNode::Literal(lit_val), id.inc()))
 	} else if let Token::Identifier(ident_val) = token {
-		Some(AnnotatedASTNode::new(ASTNode::Word(ident_val), id.inc()))
+		Some(AnnotatedASTNode::new(ASTNode::Identifier(ident_val), id.inc()))
 	} else if let Token::Keyword(kw_val) = token {
 		Some(AnnotatedASTNode::new(ASTNode::Keyword(kw_val), id.inc()))
 	} else {

@@ -1,6 +1,7 @@
 pub mod utils;
 /// Contains the lexer: Performs lexical analysis over a string of tower code to produce tokens
 pub mod lexer;
+pub mod lexer_new;
 /// Contins the parser: Performs parsing or syntactic analysis over a stream of tokens to produce an Abstract Syntax Tree (AST)
 pub mod parser;
 pub mod parser_new;

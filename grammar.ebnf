@@ -1,16 +1,52 @@
-(* // TODO: Figure out the syntax and notation of EBNF grammar - Or pick one of the many available *)
+(*
+	EBNF Grammar Syntax:
+		Terminals are strings, i.e. "pub" or 'he says "hello"' if quotes need to be included:
+			Strings can use backslashes as escape characters and supports common escape sequences
+		Nonterminals are identifiers
+		Basic syntax: `nonterminal = definition ;`
 
-module ::= { [s], function, [s] } ;
+		A token is a terminal or nonterminal
+		In the definition of a nonterminal:
+			Tokens come directly after one another with space between, denoting concatenation, e.g. `main_fun = "public" space "static" space "void" space "main"` matches "public static void main"
+			Tokens can be grouped with ()
+			Tokens can have the following postfix operators applied:
+				"x+" - one or more x
+				"x*" - zero or more x
+				"x?" - zero or one x
+			Tokens can have the following infix operators applied:
+				"x | y" - x or y
+				"x - y" - x that does not match y
+			The following constants apply:
+				XID_START - Matches any unicode character in the XID_Start class
+				XID_CONTINUE - Matches any unicode character in the XID_Continue class
+				ALPHA - Matches any unicode alphabetic character
+				ALPHANUM - Matches any unicode alphabetic character and "1234567890"
+				CHAR - Matches any unicode character
+				NUM - Matches any of "1234567890"
+				NUM_BIN - Matches any of "01"
+				NUM_HEX - Matches any of "1234567890abcdef"
+				NUM_OCT - Matches any of "1234567"
+			"<? "explanation" ?>" can be used to denote syntax that is highly complex and isn't formalised in the EBNF grammar
+*)
 
-function ::= "fn", s, identifier, [s], block ;
+module = ( s* function s* )+ ;
 
-block ::= "{", { [s], identifier | literal }, [s], "}" ;
+function = "fn" s+ identifier s+ block ;
+
+block = "{" ( s* ( identifier | literal ) )* s* "}" ;
 
 (* Same definition of identifiers that Rust uses - derived from unicode rules for identifiers *)
-identifier ::= (xid-start | "_"), xid-continue* ;
+identifier = ( XID_START | "_" ) XID_CONTINUE* ;
 
-literal ::= string_literal ;
+literal = literal_string | literal_integer | literal_float ;
 
-string_literal ::= '"', ? special string handling ?, '"' ;
+(* literal_string = '"' <? "special string handling" ?> '"' ; *)
 
-s ::= ( " " | "\t" | "\n" | "\r" )+ ;
+(* NOTE: Check that this is indeed correct *)
+literal_string = '"' ( ( '\' ( '\' | 'n' | 't' | 'r' | '0' | '"' | ( 'x' NUM_HEX NUM_HEX ) ) ) | CHAR - '"' )* '"' ;
+
+literal_integer = "-"? ( "0b" NUM_BIN+ ) | ( "0x" NUM_HEX+ ) | ( "0o" NUM_OCT+ ) | ( NUM+ ) ;
+
+literal_float = "-"? NUM+ ( "." NUM* )? ( ( "e" | "E" ) "-"? NUM+ ) ;
+
+s = ( " " | "\t" | "\n" | "\r" )+ ;

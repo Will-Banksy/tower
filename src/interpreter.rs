@@ -41,7 +41,7 @@ pub(crate) fn exec_node(stack: &mut Box<dyn TowerStack>, fns: &HashMap<String, A
 			stack.push_lit(lit)?;
 			Ok(())
 		},
-		ASTNode::Word(word) => exec_fn(stack, fns, word),
+		ASTNode::Identifier(word) => exec_fn(stack, fns, word),
 		ASTNode::Instruction(func) => func(stack, fns),
 		ASTNode::Block(blck_body) => {
 			for node in blck_body {

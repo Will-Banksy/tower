@@ -149,7 +149,7 @@ pub fn calc_stack_effects(tles: &HashMap<String, AnnotatedASTNode>, node: &Annot
 			}
 			Ok(accum)
 		},
-		ASTNode::Word(word) => tles.get(word).map(|func| calc_stack_effects(tles, func, effects)).unwrap_or(Err(format!("[ERROR]: No function {}", word))) // Will fail at instruction names if they are not added with stack effects at this point
+		ASTNode::Identifier(word) => tles.get(word).map(|func| calc_stack_effects(tles, func, effects)).unwrap_or(Err(format!("[ERROR]: No function {}", word))) // Will fail at instruction names if they are not added with stack effects at this point
 	}?;
 	effects.insert(node.id, effect.clone());
 	Ok(effect)

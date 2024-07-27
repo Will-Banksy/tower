@@ -18,3 +18,20 @@ impl IncrementMut for u64 {
 		*self
 	}
 }
+
+pub trait IntoResult {
+	fn into_result<R, E>(self, ok: R, err: E) -> Result<R, E>;
+}
+
+impl IntoResult for bool {
+	fn into_result<R, E>(self, ok: R, err: E) -> Result<R, E> {
+		match self {
+			true => {
+				Ok(ok)
+			}
+			false => {
+				Err(err)
+			}
+		}
+	}
+}

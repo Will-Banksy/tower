@@ -4,7 +4,7 @@ use crate::utils::IsWhitespace;
 
 // TODO: Better parsing method: https://depth-first.com/articles/2021/12/16/a-beginners-guide-to-parsing-in-rust/
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
 	Keyword(KeywordType),
 	Identifier(String),
@@ -21,7 +21,7 @@ pub enum KeywordType {
 	ReorderBefore, // <- // NOTE: This will be syntax sugar for more natural usage of ifs, ifelses, etc. e.g. "if <- <conditional> <if-true>" vs <conditional> <if-true> if" // TODO
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
 	U64(u64),
 	I64(i64),
