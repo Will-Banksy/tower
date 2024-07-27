@@ -5,7 +5,7 @@ use std::{collections::HashMap, rc::Rc, sync::RwLock};
 use scanner::Scanner;
 use unicode_xid::UnicodeXID;
 
-use crate::{error::{SyntaxError, SyntaxErrorKind}, lexer::{Literal, Token}, parser::{ASTNode, AnnotatedASTNode, NodeId}, utils::IntoResult};
+use crate::{error::{SyntaxError, SyntaxErrorKind}, lexer::{Literal, Token}, parser::{ASTNode, AnnotatedASTNode, NodeId}, utils::{IntoOption, IntoResult}};
 
 // NOTE: Do I really need to rewrite both the lexer and parser completely?
 //       Or should I just do the following:
@@ -16,6 +16,12 @@ use crate::{error::{SyntaxError, SyntaxErrorKind}, lexer::{Literal, Token}, pars
 // TODO: Current idea: Yeah just rewrite the lexer and parser in one using the scanner pattern. Why not
 
 // TODO: Need to probably examine all errors and aggregate them - e.g. if choosing between A and B for C, we're gonna get "Expected A" and "Expected B" separately - ideally we'd have "Expected A, B"
+// TODO: Indeed, error handling needs a lot of work - We're currently basically ignoring all errors
+//           We perhaps, in various scanner functions, need some way to "commit to a path" - i.e. if we're looking for any functions, and we come across "fn"
+//           We perhaps need some enum other than Result that holds either Ok, Err, or a secret third thing: Skip
+//           NOTE: Doing the above with Option<Result<_, SyntaxError>> where None is Skip
+
+type ParseResult<R> = Option<Result<R, SyntaxError>>;
 
 static NODE_ID: RwLock<NodeId> = RwLock::new(NodeId::new());
 
@@ -30,7 +36,7 @@ pub enum TokenType {
 	EscapeSequence
 }
 
-pub fn parse(scanner: &mut Scanner, node_id: &mut NodeId) -> Result<ASTNode<AnnotatedASTNode>, SyntaxError> {
+pub fn parse(scanner: &mut Scanner, node_id: &mut NodeId) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	*NODE_ID.write().unwrap() = *node_id;
 
 	let ret = Ok(
@@ -43,7 +49,7 @@ pub fn parse(scanner: &mut Scanner, node_id: &mut NodeId) -> Result<ASTNode<Anno
 }
 
 /// Returns a Module ASTNode
-fn module(scanner: &mut Scanner) -> Result<ASTNode<AnnotatedASTNode>, SyntaxError> {
+fn module(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	eprintln!("module");
 
 	scanner.take_any(s);
@@ -60,7 +66,7 @@ fn module(scanner: &mut Scanner) -> Result<ASTNode<AnnotatedASTNode>, SyntaxErro
 }
 
 /// Returns a Function ASTNode, paired with the function name
-fn function<'a>(scanner: &'a mut Scanner) -> Result<(String, ASTNode<AnnotatedASTNode>), SyntaxError> {
+fn function<'a>(scanner: &'a mut Scanner) -> ParseResult<(String, ASTNode<AnnotatedASTNode>)> {
 	eprintln!("function");
 
 	if !scanner.take_str("fn") {
@@ -88,12 +94,12 @@ fn function<'a>(scanner: &'a mut Scanner) -> Result<(String, ASTNode<AnnotatedAS
 }
 
 /// Returns a Block ASTNode
-fn block(scanner: &mut Scanner) -> Result<ASTNode<AnnotatedASTNode>, SyntaxError> {
+fn block(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	eprintln!("block");
 
 	scanner.take('{').into_result((), SyntaxError::expected(vec![TokenType::LCurlyParen], scanner.cursor()))?;
 
-	let nodes = scanner.take_any(|scanner| -> Result<ASTNode<AnnotatedASTNode>, SyntaxError> {
+	let nodes = scanner.take_any(|scanner| -> ParseResult<ASTNode<AnnotatedASTNode>> {
 		scanner.take_any(s);
 
 		let ret = match scanner.take_choice(vec![
@@ -125,7 +131,7 @@ fn block(scanner: &mut Scanner) -> Result<ASTNode<AnnotatedASTNode>, SyntaxError
 }
 
 /// Returns an Identifier ASTNode
-fn identifier(scanner: &mut Scanner) -> Result<ASTNode<AnnotatedASTNode>, SyntaxError> {
+fn identifier(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	eprintln!("identifier");
 
 	let first = scanner.take_if(|c| {
@@ -142,7 +148,7 @@ fn identifier(scanner: &mut Scanner) -> Result<ASTNode<AnnotatedASTNode>, Syntax
 }
 
 /// Returns a Literal ASTNode
-fn literal(scanner: &mut Scanner) -> Result<ASTNode<AnnotatedASTNode>, SyntaxError> {
+fn literal(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	eprintln!("literal");
 
 	let ret = scanner.take_choice(vec![
@@ -157,12 +163,14 @@ fn literal(scanner: &mut Scanner) -> Result<ASTNode<AnnotatedASTNode>, SyntaxErr
 }
 
 /// Returns a Literal
-fn literal_string(scanner: &mut Scanner) -> Result<Literal, SyntaxError> {
+fn literal_string(scanner: &mut Scanner) -> ParseResult<Literal> {
 	eprintln!("literal_string");
 
 	eprintln!("literal_string cursor: {:?} at {}", scanner.peek(), scanner.cursor());
 
-	scanner.take('\"').into_result((), SyntaxError::expected(vec![TokenType::Quote], scanner.cursor()))?;
+	if !scanner.take('\"') {
+		return None;
+	};
 
 	eprintln!("literal_string #1");
 
@@ -172,9 +180,11 @@ fn literal_string(scanner: &mut Scanner) -> Result<Literal, SyntaxError> {
 		scanner.take_choice::<char, SyntaxError>(vec![
 			Box::new(|scanner| {
 				eprintln!("literal_string take \\");
-				scanner.take('\\').into_result((), SyntaxError::empty(scanner.cursor()))?;
+				if !scanner.take('\\') {
+					return None;
+				}
 
-				scanner.take_choice::<char, SyntaxError>(vec![
+				match scanner.take_choice::<char, SyntaxError>(vec![
 					Box::new(|scanner| {
 						match scanner.take_of([
 							'\\',
@@ -185,7 +195,7 @@ fn literal_string(scanner: &mut Scanner) -> Result<Literal, SyntaxError> {
 							'"',
 						].iter()) {
 							Some(c) => {
-								Ok(match c {
+								Some(Ok(match c {
 									'\\' => '\\',
 									'n' => '\n',
 									't' => '\t',
@@ -193,15 +203,17 @@ fn literal_string(scanner: &mut Scanner) -> Result<Literal, SyntaxError> {
 									'0' => '\0',
 									'"' => '"',
 									_ => unimplemented!()
-								})
+								}))
 							}
 							None => {
-								return Err(SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor()))
+								None// Err(SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor()))
 							}
 						}
 					}),
 					Box::new(|scanner| {
-						scanner.take('x').into_result((), SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor()))?;
+						if !scanner.take('x') {
+							return None;
+						}
 
 						let mut sb = String::new();
 
@@ -210,44 +222,62 @@ fn literal_string(scanner: &mut Scanner) -> Result<Literal, SyntaxError> {
 								c.is_ascii_hexdigit()
 							}) {
 								Some(c) => { sb.push(c); },
-								None => { return Err(SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor())); }
+								None => { return Some(Err(SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor()))); }
 							};
 						}
 
 						let hex_val = u32::from_str_radix(&sb.trim(), 16).unwrap();
 
-						Ok(
+						Some(Ok(
 							unsafe { char::from_u32_unchecked(hex_val) } // NOTE: This may cause issues
-						)
+						))
 					})
-				]).ok_or(SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor()))
+				]) {
+					None => {
+						Some(Err(SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor())))
+					}
+					r => r
+				}
 			}),
 			Box::new(|scanner| {
 				eprintln!("literal_string take CHAR");
 				match scanner.pop() {
 					Some(c) => {
 						if c == '\"' {
-							Err(SyntaxError::empty(scanner.cursor()))
+							None
 						} else {
-							Ok(c)
+							Some(Ok(c))
 						}
 					}
-					None => Err(SyntaxError::expected(vec![TokenType::Quote], scanner.cursor()))
+					None => Some(Err(SyntaxError::expected(vec![TokenType::Quote], scanner.cursor())))
 				}
 			})
-		]).ok_or(SyntaxError::empty(scanner.cursor()))
+		])
 	});
+
+	let mut sb = String::new();
+
+	for c in chars {
+		match c {
+			Ok(c) => {
+				sb.push(c);
+			}
+			Err(e) => {
+				return Some(Err(e));
+			}
+		}
+	}
 
 	scanner.advance(1);
 
 	eprintln!("literal_string end");
 
-	Ok(Literal::String(chars.into_iter().collect()))
+	Some(Ok(Literal::String(sb)))
 }
 
 /// Returns a Literal
-fn literal_integer(scanner: &mut Scanner) -> Result<Literal, SyntaxError> { // TODO
-	Err(SyntaxError::empty(scanner.cursor()))
+fn literal_integer(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
+	None
 
 	// let negative = scanner.take('-');
 
@@ -261,15 +291,15 @@ fn literal_integer(scanner: &mut Scanner) -> Result<Literal, SyntaxError> { // T
 }
 
 /// Returns a Literal
-fn literal_float(scanner: &mut Scanner) -> Result<Literal, SyntaxError> { // TODO
-	Err(SyntaxError::empty(scanner.cursor()))
+fn literal_float(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
+	None
 }
 
-fn s(scanner: &mut Scanner) -> Result<(), SyntaxError> {
+fn s(scanner: &mut Scanner) -> ParseResult<()> {
 	scanner.take_of([
 		' ',
 		'\n',
 		'\t',
 		'\r',
-	].iter()).map(|_| ()).ok_or(SyntaxError::expected(vec![TokenType::Whitespace], scanner.cursor()))
+	].iter()).map(|_| ()).ok_or(SyntaxError::expected(vec![TokenType::Whitespace], scanner.cursor())).into_option()
 }

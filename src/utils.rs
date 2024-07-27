@@ -35,3 +35,13 @@ impl IntoResult for bool {
 		}
 	}
 }
+
+pub trait IntoOption: Sized {
+	fn into_option(self) -> Option<Self>;
+}
+
+impl<T> IntoOption for T {
+	fn into_option(self) -> Option<Self> {
+		Some(self)
+	}
+}

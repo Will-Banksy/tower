@@ -6,6 +6,11 @@ pub struct Scanner<'a> {
 	cursor: usize
 }
 
+// enum ScanResult<R, E> {
+// 	Some(Result<R, E>),
+// 	Skip
+// }
+
 impl<'a> Scanner<'a> { // TODO: Introduce a better naming scheme, with separation of functions operating on the underlying data and higher order functions
 	pub fn new(content: &'a str) -> Self {
 		Scanner {
@@ -122,14 +127,13 @@ impl<'a> Scanner<'a> { // TODO: Introduce a better naming scheme, with separatio
 		sb
 	}
 
-	/// Attempts to match with the given function, returning with the function return value wrapped in a Some on success, None on failure.
-	/// Failure does not advance the cursor
-	pub fn try_take<R, E>(&mut self, f: impl FnOnce(&mut Self) -> Result<R, E>) -> Option<R> {
+	/// Attempts to match with the given function, returning with the function return value, and not advancing the cursor in case of a None
+	pub fn try_take<R, E>(&mut self, f: impl FnOnce(&mut Self) -> Option<Result<R, E>>) -> Option<Result<R, E>> {
 		let cursor = self.cursor();
 
 		match f(self) {
-			Ok(r) => Some(r),
-			Err(_) => {
+			Some(r) => Some(r),
+			None => {
 				self.cursor = cursor;
 				None
 			}
@@ -137,7 +141,7 @@ impl<'a> Scanner<'a> { // TODO: Introduce a better naming scheme, with separatio
 	}
 
 	/// Attempts to match with the given function any number of times, returning a list of all return values
-	pub fn take_any<R, E>(&mut self, mut f: impl FnMut(&mut Self) -> Result<R, E>) -> Vec<R> {
+	pub fn take_any<R, E>(&mut self, mut f: impl FnMut(&mut Self) -> Option<Result<R, E>>) -> Vec<Result<R, E>> {
 		let mut rs = Vec::new();
 
 		while let Some(r) = self.try_take(&mut f) {
@@ -148,7 +152,7 @@ impl<'a> Scanner<'a> { // TODO: Introduce a better naming scheme, with separatio
 	}
 
 	/// Attempts to match with the given function at least once, returning a list of all return values on success
-	pub fn take_some<R, E>(&mut self, f: impl FnMut(&mut Self) -> Result<R, E>) -> Option<Vec<R>> {
+	pub fn take_some<R, E>(&mut self, f: impl FnMut(&mut Self) -> Option<Result<R, E>>) -> Option<Vec<Result<R, E>>> {
 		let ret = self.take_any(f);
 
 		if ret.len() == 0 {
@@ -158,8 +162,8 @@ impl<'a> Scanner<'a> { // TODO: Introduce a better naming scheme, with separatio
 		}
 	}
 
-	/// Calls try_take on each function provided, returning the first Ok value, or None if all failed
-	pub fn take_choice<R, E>(&mut self, fs: Vec<Box<dyn FnMut(&mut Self) -> Result<R, E>>>) -> Option<R> {
+	/// Calls try_take on each function provided, returning the first Ok or Err value, or None
+	pub fn take_choice<R, E>(&mut self, fs: Vec<Box<dyn FnMut(&mut Self) -> Option<Result<R, E>>>>) -> Option<Result<R, E>> {
 		for mut f in fs {
 			match self.try_take(|scanner| {
 				f(scanner)
@@ -186,14 +190,14 @@ mod test { // TODO: Unit tests
 		let mut scanner = Scanner::new(test);
 
 		assert_eq!(scanner.take_some(|scanner| {
-			scanner.take('h').into_result((), ())
-		}), Some(vec![(), (), (), (), ()]));
+			Some(scanner.take('h').into_result((), ()))
+		}), Some(vec![Ok(()), Ok(()), Ok(()), Ok(()), Ok(())]));
 
 		assert_eq!(scanner.cursor(), 5);
 
 		assert_eq!(scanner.take_some(|scanner| {
-			scanner.take('e').into_result((), ())
-		}), Some(vec![()]));
+			Some(scanner.take('e').into_result((), ()))
+		}), Some(vec![Ok(())]));
 
 		assert_eq!(scanner.cursor(), 6);
 	}
