@@ -29,7 +29,7 @@
 			"<? "explanation" ?>" can be used to denote syntax that is highly complex and isn't formalised in the EBNF grammar
 *)
 
-module = ( s* function s* )+ ;
+module = ( s* function )* ;
 
 function = "fn" s+ identifier s+ block ;
 

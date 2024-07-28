@@ -6,7 +6,7 @@ Why not LLVM IR anymore? Cause I feel I've got what I wanted from writing it, an
 
 Extremely WIP, the lexer has not been finished yet, and the language design isn't fully decided upon either. This README serves as its documentation and discussion.
 
-TODO: Update this README
+TODO: Update this README - It's out of date with the current state of the language. In particular, the new parser and defined grammar does not yet support some features, functions have different syntax, and with the analyser work, generics have been disabled cause they weren't implemented properly
 
 ## Concepts
 
@@ -64,7 +64,7 @@ The following types are (or will be) supported:
 | f64       | 64-bit floating-point number | `6.9`, `7f`          |
 | fnptr     | Function pointer             | `&function_name`     |
 
-TODO: Support different integer sizes, and rethink how data is stored on the stack
+TODO: Support different integer sizes
 
 TODO: Also support Algebraic Data Types (ADTs), where the type would be e.g. `bool | i64` and to deconstruct it you use `match` keyword/instruction, which has stack effect e.g. `bool | i64 -> T`, where `T` is the type returned from the anon fns passed to `match` (there may be multiple things returned... how might the stack effect reflect that...? Maybe it just copies the output of the anon fns as it's stack effect... be nice if I could do it in a less special case way tho). Also as we might need named variants, can do something like `None | Some(i64)`
 

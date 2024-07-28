@@ -5,6 +5,17 @@ use crate::{error::RuntimeError, lexer::{KeywordType, Literal, Token}, stack::To
 
 pub type Instruction = Rc<dyn Fn(&mut Box<dyn TowerStack>, &HashMap<String, AnnotatedASTNode>) -> Result<(), RuntimeError>>;
 
+#[derive(Debug)]
+pub enum ASTNodeType {
+	None,
+	Module,
+	Function,
+	Keyword,
+	Literal,
+	Identifier,
+	Block
+}
+
 #[derive(Clone)]
 pub enum ASTNode<N: Clone> {
 	Module(HashMap<String, N>, String),

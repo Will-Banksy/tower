@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use tower::{analyser::{analyse, StackEffect}, interpreter::interp, lexer::tokenise, parser::{parse_tokens, ASTNode, AnnotatedASTNode, NodeId}, parser_new::{self, scanner::Scanner}, stack::TowerStack};
-
-// TODO: Rethink error handling. Look at resources for error handling in compilers/interpreters. Maybe use log crate, maybe don't. Need context-aware errors too
+use tower::{analyser::{analyse, StackEffect}, interpreter::interp, parser::{ASTNode, AnnotatedASTNode, NodeId}, parser_new::{self, result::ScanResult, scanner::Scanner}, stack::TowerStack};
 
 fn main() {
 	let towercode = include_str!("../main.tower");
@@ -13,9 +11,13 @@ fn main() {
 
 	let mut scanner = Scanner::new(&towercode);
 	let mut ast = match parser_new::parse(&mut scanner, &mut node_id) {
-		Ok(ast) => ast,
-		Err(e) => {
+		ScanResult::Valid(ast) => ast,
+		ScanResult::WithErr(e) => {
 			e.print_error(&scanner, "main.tower", std::io::stderr()).unwrap();
+			return;
+		}
+		ScanResult::Unrecognised => {
+			eprintln!("No module recognised");
 			return;
 		}
 	}.annotated(node_id.inc());

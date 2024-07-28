@@ -1,31 +1,21 @@
 pub mod scanner;
+pub mod result;
 
-use std::{collections::HashMap, rc::Rc, sync::RwLock};
+use std::sync::RwLock;
 
+use result::ScanResult::{self, Valid, WithErr, Unrecognised};
 use scanner::Scanner;
 use unicode_xid::UnicodeXID;
 
-use crate::{error::{SyntaxError, SyntaxErrorKind}, lexer::{Literal, Token}, parser::{ASTNode, AnnotatedASTNode, NodeId}, utils::{IntoOption, IntoResult}};
+use crate::{brk, error::{SyntaxError, SyntaxErrorKind}, lexer::Literal, parser::{ASTNode, ASTNodeType, AnnotatedASTNode, NodeId}};
 
-// NOTE: Do I really need to rewrite both the lexer and parser completely?
-//       Or should I just do the following:
-//           Extend the lexer for more token types and update identifier lexing to use same rules as Rust, and add good error reporting.
-//           And rewrite the parser into a recursive descent parser?
-//           I could always use the scanner pattern for the lexer
-
-// TODO: Current idea: Yeah just rewrite the lexer and parser in one using the scanner pattern. Why not
-
-// TODO: Need to probably examine all errors and aggregate them - e.g. if choosing between A and B for C, we're gonna get "Expected A" and "Expected B" separately - ideally we'd have "Expected A, B"
-// TODO: Indeed, error handling needs a lot of work - We're currently basically ignoring all errors
-//           We perhaps, in various scanner functions, need some way to "commit to a path" - i.e. if we're looking for any functions, and we come across "fn"
-//           We perhaps need some enum other than Result that holds either Ok, Err, or a secret third thing: Skip
-//           NOTE: Doing the above with Option<Result<_, SyntaxError>> where None is Skip
-
-type ParseResult<R> = Option<Result<R, SyntaxError>>;
+type ParseResult<T> = ScanResult<T, SyntaxError>;// Option<Result<T, SyntaxError>>;
 
 static NODE_ID: RwLock<NodeId> = RwLock::new(NodeId::new());
 
+#[derive(Debug)]
 pub enum TokenType {
+	None,
 	Identifier,
 	LCurlyParen,
 	RCurlyParen,
@@ -33,61 +23,71 @@ pub enum TokenType {
 	Literal,
 	KeywordFn,
 	Quote,
-	EscapeSequence
+	EscapeSequence,
+	Block
 }
 
 pub fn parse(scanner: &mut Scanner, node_id: &mut NodeId) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	*NODE_ID.write().unwrap() = *node_id;
 
-	let ret = Ok(
-		module(scanner)?
-	);
+	let ret = brk!(module(scanner));
+
+	scanner.take_any(s);
+
+	if scanner.has_next() {
+		return WithErr(SyntaxError::new(SyntaxErrorKind::Unexpected, ASTNodeType::Module, scanner.cursor()));
+	}
 
 	*node_id = *NODE_ID.read().unwrap();
 
-	ret
+	Valid(ret)
 }
 
 /// Returns a Module ASTNode
 fn module(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	eprintln!("module");
 
-	scanner.take_any(s);
+	let (nodes, err) = scanner.take_any(|scanner| {
+		scanner.take_any(s);
+		let fun = brk!(function(scanner));
 
-	let nodes = scanner.take_any(function);
+		Valid(fun)
+	});
+	if let Some(e) = err {
+		return WithErr(e);
+	}
 
 	let tles = nodes.into_iter().map(|(fn_name, fn_body)| (fn_name.to_string(), fn_body.annotated(NODE_ID.write().unwrap().inc()))).collect();
 
-	scanner.take_any(s);
-
 	eprintln!("module end");
 
-	Ok(ASTNode::Module(tles, "main".to_string()))
+	Valid(ASTNode::Module(tles, "main".to_string()))
 }
 
 /// Returns a Function ASTNode, paired with the function name
 fn function<'a>(scanner: &'a mut Scanner) -> ParseResult<(String, ASTNode<AnnotatedASTNode>)> {
 	eprintln!("function");
 
-	if !scanner.take_str("fn") {
-		return Err(SyntaxError::expected(vec![TokenType::KeywordFn], scanner.cursor()));
-	}
+	brk!(ParseResult::from(scanner.take_str("fn")));
 
-	scanner.take_some(s);
+	brk!(ParseResult::from(scanner.take_some(s)).require(SyntaxError::expected(vec![TokenType::Whitespace], ASTNodeType::Function, scanner.cursor())));//.ok_or(SyntaxError::expected(vec![TokenType::Whitespace], ASTNodeType::Function, scanner.cursor()));
 
-	let fn_name = if let ASTNode::Identifier(s) = identifier(scanner)? {
-		s
-	} else {
-		unimplemented!()
+	let fn_name = match identifier(scanner).require(SyntaxError::expected(vec![TokenType::Identifier], ASTNodeType::Function, scanner.cursor())) {
+		Valid(ASTNode::Identifier(s)) => s,
+		WithErr(e) => {
+			return WithErr(e);
+		}
+		Valid(_) => unreachable!(),
+		_ => unreachable!()
 	};
 
-	scanner.take_some(s);
+	brk!(ParseResult::from(scanner.take_some(s)).require(SyntaxError::expected(vec![TokenType::Whitespace], ASTNodeType::Function, scanner.cursor())));
 
-	let fn_body = block(scanner)?;
+	let fn_body = brk!(block(scanner).require(SyntaxError::expected(vec![TokenType::Block], ASTNodeType::Function, scanner.cursor())));//.ok_or(SyntaxError::expected(vec![TokenType::Block], scanner.cursor()))?;
 
 	eprintln!("function end");
 
-	Ok((
+	Valid((
 		fn_name.to_string(),
 		ASTNode::Function(Box::new(fn_body.annotated(NODE_ID.write().unwrap().inc())))
 	))
@@ -97,35 +97,31 @@ fn function<'a>(scanner: &'a mut Scanner) -> ParseResult<(String, ASTNode<Annota
 fn block(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	eprintln!("block");
 
-	scanner.take('{').into_result((), SyntaxError::expected(vec![TokenType::LCurlyParen], scanner.cursor()))?;
+	brk!(scanner.take('{').into());
 
-	let nodes = scanner.take_any(|scanner| -> ParseResult<ASTNode<AnnotatedASTNode>> {
+	let (nodes, err) = scanner.take_any(|scanner| -> ParseResult<ASTNode<AnnotatedASTNode>> {
 		scanner.take_any(s);
 
-		let ret = match scanner.take_choice(vec![
+		let ret = brk!(scanner.take_choice(vec![
 			Box::new(identifier),
 			Box::new(literal)
-		]) {
-			Some(r) => Ok(r),
-			None => {
-				Err(SyntaxError::expected(vec![TokenType::Identifier, TokenType::Literal], scanner.cursor()))
-			}
-		};
+		]));
 
 		scanner.take_any(s);
 
-		ret
+		Valid(ret)
 	});
+	if let Some(e) = err {
+		return WithErr(e);
+	}
 
 	scanner.take_any(s);
 
-	eprintln!("block cursor: {:?} at {}", scanner.peek(), scanner.cursor());
-
-	scanner.take('}').into_result((), SyntaxError::expected(vec![TokenType::LCurlyParen], scanner.cursor()))?;
+	brk!(ParseResult::from(scanner.take('}')).require(SyntaxError::expected(vec![TokenType::RCurlyParen], ASTNodeType::Block, scanner.cursor())));
 
 	eprintln!("block end");
 
-	Ok(
+	Valid(
 		ASTNode::Block(nodes.into_iter().map(|node| node.annotated(NODE_ID.write().unwrap().inc())).collect())
 	)
 }
@@ -134,9 +130,9 @@ fn block(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 fn identifier(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	eprintln!("identifier");
 
-	let first = scanner.take_if(|c| {
+	let first = brk!(scanner.take_if(|c| {
 		UnicodeXID::is_xid_start(c) || c == '_'
-	}).ok_or(SyntaxError::expected(vec![TokenType::Identifier], scanner.cursor()))?;
+	}).into());
 
 	let mut ident = scanner.take_until(|c| UnicodeXID::is_xid_continue(c));
 
@@ -144,140 +140,111 @@ fn identifier(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 
 	eprintln!("identifier end");
 
-	Ok(ASTNode::Identifier(ident.into()))
+	Valid(ASTNode::Identifier(ident.into()))
 }
 
 /// Returns a Literal ASTNode
 fn literal(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 	eprintln!("literal");
 
-	let ret = scanner.take_choice(vec![
+	let ret = brk!(scanner.take_choice(vec![
 		Box::new(literal_string),
 		Box::new(literal_integer),
 		Box::new(literal_float)
-	]).map(|lit| ASTNode::Literal(lit)).ok_or(SyntaxError::expected(vec![TokenType::Literal], scanner.cursor()))?;
+	]).map(|lit| ASTNode::Literal(lit)));
 
 	eprintln!("literal end");
 
-	Ok(ret)
+	Valid(ret)
 }
 
 /// Returns a Literal
 fn literal_string(scanner: &mut Scanner) -> ParseResult<Literal> {
 	eprintln!("literal_string");
 
-	eprintln!("literal_string cursor: {:?} at {}", scanner.peek(), scanner.cursor());
-
 	if !scanner.take('\"') {
-		return None;
+		return Unrecognised;
 	};
 
 	eprintln!("literal_string #1");
 
-	// TODO: Have a think about how to handle syntax errors here...
-
-	let chars = scanner.take_any::<char, SyntaxError>(|scanner| {
+	let (chars, err) = scanner.take_any::<char, SyntaxError>(|scanner| {
 		scanner.take_choice::<char, SyntaxError>(vec![
 			Box::new(|scanner| {
-				eprintln!("literal_string take \\");
 				if !scanner.take('\\') {
-					return None;
+					return Unrecognised;
 				}
 
-				match scanner.take_choice::<char, SyntaxError>(vec![
+				scanner.take_choice::<char, SyntaxError>(vec![
 					Box::new(|scanner| {
-						match scanner.take_of([
+						ParseResult::from(scanner.take_of([
 							'\\',
 							'n',
 							't',
 							'r',
 							'0',
 							'"',
-						].iter()) {
-							Some(c) => {
-								Some(Ok(match c {
-									'\\' => '\\',
-									'n' => '\n',
-									't' => '\t',
-									'r' => '\r',
-									'0' => '\0',
-									'"' => '"',
-									_ => unimplemented!()
-								}))
-							}
-							None => {
-								None// Err(SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor()))
-							}
-						}
+						].iter())).map(|c| match c {
+							'\\' => '\\',
+							'n' => '\n',
+							't' => '\t',
+							'r' => '\r',
+							'0' => '\0',
+							'"' => '"',
+							_ => unimplemented!()
+						})
 					}),
 					Box::new(|scanner| {
-						if !scanner.take('x') {
-							return None;
-						}
+						brk!(scanner.take('x').into());
 
 						let mut sb = String::new();
 
 						for _ in 0..2 {
-							match scanner.take_if(|c| {
+							sb.push(brk!(ParseResult::from(scanner.take_if(|c| {
 								c.is_ascii_hexdigit()
-							}) {
-								Some(c) => { sb.push(c); },
-								None => { return Some(Err(SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor()))); }
-							};
+							})).require(SyntaxError::expected(vec![TokenType::EscapeSequence], ASTNodeType::Literal, scanner.cursor()))))
 						}
 
 						let hex_val = u32::from_str_radix(&sb.trim(), 16).unwrap();
 
-						Some(Ok(
+						Valid(
 							unsafe { char::from_u32_unchecked(hex_val) } // NOTE: This may cause issues
-						))
+						)
 					})
-				]) {
-					None => {
-						Some(Err(SyntaxError::expected(vec![TokenType::EscapeSequence], scanner.cursor())))
-					}
-					r => r
-				}
+				]).require(SyntaxError::expected(vec![TokenType::EscapeSequence], ASTNodeType::Literal, scanner.cursor()))
 			}),
 			Box::new(|scanner| {
-				eprintln!("literal_string take CHAR");
 				match scanner.pop() {
 					Some(c) => {
 						if c == '\"' {
-							None
+							Unrecognised
 						} else {
-							Some(Ok(c))
+							Valid(c)
 						}
 					}
-					None => Some(Err(SyntaxError::expected(vec![TokenType::Quote], scanner.cursor())))
+					None => {
+						WithErr(SyntaxError::expected(vec![TokenType::Quote], ASTNodeType::Literal, scanner.cursor()))
+					}
 				}
 			})
 		])
 	});
-
-	let mut sb = String::new();
-
-	for c in chars {
-		match c {
-			Ok(c) => {
-				sb.push(c);
-			}
-			Err(e) => {
-				return Some(Err(e));
-			}
-		}
+	if let Some(e) = err {
+		return WithErr(e);
 	}
+
+	let string = chars.into_iter().collect();
 
 	scanner.advance(1);
 
-	eprintln!("literal_string end");
+	eprintln!("literal_string end @ {}", scanner.cursor());
 
-	Some(Ok(Literal::String(sb)))
+	Valid(Literal::String(string))
 }
 
 /// Returns a Literal
 fn literal_integer(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
-	None
+	Unrecognised
 
 	// let negative = scanner.take('-');
 
@@ -292,7 +259,7 @@ fn literal_integer(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
 
 /// Returns a Literal
 fn literal_float(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
-	None
+	Unrecognised
 }
 
 fn s(scanner: &mut Scanner) -> ParseResult<()> {
@@ -301,5 +268,5 @@ fn s(scanner: &mut Scanner) -> ParseResult<()> {
 		'\n',
 		'\t',
 		'\r',
-	].iter()).map(|_| ()).ok_or(SyntaxError::expected(vec![TokenType::Whitespace], scanner.cursor())).into_option()
+	].iter()).map(|_| ()).into()
 }

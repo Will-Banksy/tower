@@ -41,6 +41,7 @@ pub trait IntoOption: Sized {
 }
 
 impl<T> IntoOption for T {
+	/// Wraps self in Some
 	fn into_option(self) -> Option<Self> {
 		Some(self)
 	}
