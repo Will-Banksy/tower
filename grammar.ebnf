@@ -15,7 +15,7 @@
 				"x?" - zero or one x
 			Tokens can have the following infix operators applied:
 				"x | y" - x or y
-				"x - y" - x that does not match y
+				"x - y" - x that does not match y, i.e. matches when x does but y doesn't
 			The following constants apply:
 				XID_START - Matches any unicode character in the XID_Start class
 				XID_CONTINUE - Matches any unicode character in the XID_Continue class
@@ -40,9 +40,6 @@ identifier = ( XID_START | "_" ) XID_CONTINUE* ;
 
 literal = literal_string | literal_integer | literal_float ;
 
-(* literal_string = '"' <? "special string handling" ?> '"' ; *)
-
-(* NOTE: Check that this is indeed correct *)
 literal_string = '"' ( ( '\' ( '\' | 'n' | 't' | 'r' | '0' | '"' | ( 'x' NUM_HEX NUM_HEX ) ) ) | CHAR - '"' )* '"' ;
 
 literal_integer = "-"? ( "0b" NUM_BIN+ ) | ( "0x" NUM_HEX+ ) | ( "0o" NUM_OCT+ ) | ( NUM+ ) ;

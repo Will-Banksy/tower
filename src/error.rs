@@ -30,6 +30,8 @@ impl SyntaxError {
 
 	/// Pretty-prints the error, including context retrieved from the scanner
 	pub fn print_error(&self, scanner: &Scanner, file_name: &str, mut writer: impl Write) -> Result<(), io::Error> {
+		// BUG: Alignment is off when there are multi-byte or multi code point characters such as ✨ in the context line before the cursor
+
 		let context = scanner.get_context(self.cursor);
 		let (col, row) = scanner.get_col_row(self.cursor);
 		let row_str = format!("{row}");
