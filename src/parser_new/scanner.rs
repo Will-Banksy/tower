@@ -21,7 +21,7 @@ impl<'a> Scanner<'a> { // TODO: Introduce a better naming scheme, with separatio
 	}
 
 	/// Returns the line pointed to by the cursor
-	pub fn get_context(&self, cursor: usize) -> &'a str {
+	pub fn get_context(&self, cursor: usize) -> &'a str { // BUG: Bugs with char boundaries - multi-byte characters can cause issues - Perhaps operate in terms of characters
 		// Find the previous newline
 		let start = self.content[0..cursor].rfind(|c| c == '\n').map(|i| i + 1).unwrap_or(0);
 

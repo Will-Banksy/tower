@@ -117,7 +117,7 @@ fn block(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 
 	scanner.take_any(s);
 
-	brk!(ParseResult::from(scanner.take('}')).require(SyntaxError::expected(vec![TokenType::RCurlyParen], ASTNodeType::Block, scanner.cursor())));
+	brk!(ParseResult::from(scanner.take('}')).require(SyntaxError::expected(vec![TokenType::Identifier, TokenType::Literal, TokenType::RCurlyParen], ASTNodeType::Block, scanner.cursor())));
 
 	eprintln!("block end");
 
