@@ -1,6 +1,6 @@
 use std::{fmt::{self, Display}, io::{self, Write}};
 
-use crate::{parser::ASTNodeType, parser_new::{scanner::Scanner, TokenType}};
+use crate::{analyser::TowerType, parser::ASTNodeType, parser_new::{scanner::Scanner, TokenType}};
 
 // TODO: Is there any better way to handle errors? Or will this do?
 
@@ -59,6 +59,9 @@ impl Display for SyntaxError {
 			SyntaxErrorKind::Unexpected => {
 				write!(f, "while parsing {:?}, unexpected string", self.while_parsing)
 			}
+			SyntaxErrorKind::LiteralIntegerOverflow { num, target_type } => {
+				write!(f, "while parsing {:?}, integer literal {} doesn't fit in target type {:?}", self.while_parsing, num, target_type)
+			}
 		}
 	}
 }
@@ -66,7 +69,11 @@ impl Display for SyntaxError {
 pub enum SyntaxErrorKind {
 	None,
 	Expected(Vec<TokenType>),
-	Unexpected
+	Unexpected,
+	LiteralIntegerOverflow {
+		num: String,
+		target_type: TowerType
+	}
 }
 
 #[derive(Debug)]

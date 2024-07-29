@@ -13,6 +13,35 @@ pub enum TowerType {
 	Generic(String)
 }
 
+// NOTE: The two below types are a draft idea of how I could represent types for analysis
+
+enum Type {
+	Opaque {
+		name: String,
+		size: Option<usize>, // NOTE: Alternatively to having an option field here, we could simply have the difference between sized/unsized types being whether the type implements the Sized trait
+		impls: im::Vector<Trait> // NOTE: Need more information about impl'd traits? (e.g. how to access the impl)
+	},
+	Transparent {
+		name: String,
+		fields: im::Vector<(String, Type)>,
+		/// Whether this type is a sum type/enum (true) or product type/struct (false)
+		sum_type: bool,
+		impls: im::Vector<Trait>
+	},
+}
+
+// Instead of a bool I could use this enum. "TypeType" lol
+enum TypeType {
+	Enum,
+	Struct
+}
+
+struct Trait {
+	name: String,
+	fns: im::Vector<(String, StackEffect)>,
+	assoc_types: im::Vector<(String, Type)>
+}
+
 impl Display for TowerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let gen_fmt_str;
@@ -158,6 +187,7 @@ pub fn calc_stack_effects(tles: &HashMap<String, AnnotatedASTNode>, node: &Annot
 /// Performs semantic analysis - Defines instructions and checks stack effects
 pub fn analyse(ast: &mut AnnotatedASTNode, node_id: &mut NodeId) -> Result<HashMap<NodeId, StackEffect>, String> {
 	// TODO: ALSO need to do monomorphisation and figure out generics
+	// TODO: ALSO need to assign paths to all the relevant things i.e. module::Trait::function, module::function, module::module::module::Struct
 
 	let mut effects: HashMap<NodeId, StackEffect> = HashMap::new();
 

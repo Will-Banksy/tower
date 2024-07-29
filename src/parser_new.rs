@@ -1,26 +1,27 @@
 pub mod scanner;
 pub mod result;
 
-use std::sync::RwLock;
+use std::{num::IntErrorKind, sync::RwLock};
 
 use result::ScanResult::{self, Valid, WithErr, Unrecognised};
 use scanner::Scanner;
 use unicode_xid::UnicodeXID;
 
-use crate::{brk, error::{SyntaxError, SyntaxErrorKind}, lexer::Literal, parser::{ASTNode, ASTNodeType, AnnotatedASTNode, NodeId}};
+use crate::{analyser::TowerType, brk, error::{SyntaxError, SyntaxErrorKind}, lexer::Literal, parser::{ASTNode, ASTNodeType, AnnotatedASTNode, NodeId}};
 
 type ParseResult<T> = ScanResult<T, SyntaxError>;// Option<Result<T, SyntaxError>>;
 
 static NODE_ID: RwLock<NodeId> = RwLock::new(NodeId::new());
 
 #[derive(Debug)]
-pub enum TokenType {
+pub enum TokenType { // TODO: Evaluate these, and ideally have these represented in the grammar
 	None,
 	Identifier,
 	LCurlyParen,
 	RCurlyParen,
 	Whitespace,
 	Literal,
+	Number,
 	KeywordFn,
 	Quote,
 	EscapeSequence,
@@ -81,7 +82,7 @@ fn function<'a>(scanner: &'a mut Scanner) -> ParseResult<(String, ASTNode<Annota
 		_ => unreachable!()
 	};
 
-	brk!(ParseResult::from(scanner.take_some(s)).require(SyntaxError::expected(vec![TokenType::Whitespace], ASTNodeType::Function, scanner.cursor())));
+	scanner.take_any(s);
 
 	let fn_body = brk!(block(scanner).require(SyntaxError::expected(vec![TokenType::Block], ASTNodeType::Function, scanner.cursor())));//.ok_or(SyntaxError::expected(vec![TokenType::Block], scanner.cursor()))?;
 
@@ -162,11 +163,7 @@ fn literal(scanner: &mut Scanner) -> ParseResult<ASTNode<AnnotatedASTNode>> {
 fn literal_string(scanner: &mut Scanner) -> ParseResult<Literal> {
 	eprintln!("literal_string");
 
-	if !scanner.take('\"') {
-		return Unrecognised;
-	};
-
-	eprintln!("literal_string #1");
+	brk!(scanner.take('\"').into());
 
 	let (chars, err) = scanner.take_any::<char, SyntaxError>(|scanner| {
 		scanner.take_choice::<char, SyntaxError>(vec![
@@ -243,18 +240,38 @@ fn literal_string(scanner: &mut Scanner) -> ParseResult<Literal> {
 }
 
 /// Returns a Literal
-fn literal_integer(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
-	Unrecognised
+fn literal_integer(scanner: &mut Scanner) -> ParseResult<Literal> {
+	let negative = scanner.take('-'); // TODO: Also pay attention to negatives - i.e. an integer with a negative symbol is probably signed
 
-	// let negative = scanner.take('-');
+	scanner.take_choice::<Literal, SyntaxError>(vec![
+		Box::new(|scanner| {
+			brk!(scanner.take_str("0b").into());
 
-	// scanner.take_choice(vec![
-	// 	Box::new(|scanner| {
-	// 		scanner.take_str("0b").into_result((), SyntaxError::empty(scanner.cursor()))
-	// 	})
-	// ]);
+			let (chars, err) = brk!(ParseResult::from(scanner.take_some::<char, SyntaxError>(|scanner| {
+				scanner.take_of(['0', '1'].iter()).into()
+			})).require(SyntaxError::expected(vec![TokenType::Number], ASTNodeType::Literal, scanner.cursor())));
+			if let Some(e) = err {
+				return WithErr(e);
+			}
 
-	// todo!()
+			let bin_str: String = chars.into_iter().collect();
+
+			let num = match u64::from_str_radix(&bin_str, 2) {
+				Ok(v) => v,
+				Err(e) => {
+					match e.kind() {
+						IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => {
+							return WithErr(SyntaxError::new(SyntaxErrorKind::LiteralIntegerOverflow { num: bin_str, target_type: TowerType::U64 }, ASTNodeType::Literal, scanner.cursor()))
+						}
+						_ => unreachable!() // This should be unreachable
+					}
+				}
+			};
+
+			Valid(Literal::U64(num))
+		})
+		// TODO: Finish integer literal parsing
+	])
 }
 
 /// Returns a Literal
@@ -263,10 +280,5 @@ fn literal_float(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
 }
 
 fn s(scanner: &mut Scanner) -> ParseResult<()> {
-	scanner.take_of([
-		' ',
-		'\n',
-		'\t',
-		'\r',
-	].iter()).map(|_| ()).into()
+	scanner.take_if(|c| c.is_whitespace()).map(|_| ()).into()
 }

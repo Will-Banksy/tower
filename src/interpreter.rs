@@ -1,16 +1,16 @@
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
 
 use crate::{error::RuntimeError, parser::{ASTNode, AnnotatedASTNode}, stack::TowerStack};
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum StackItem { // TODO: Each StackItem is currently 24 bytes. This is not ideal. We need a proper raw stack
-	U64(u64),
-	I64(i64),
-	F64(f64),
-	Bool(bool),
-	StrPtr(Rc<str>), // TODO: Optimise handling of strings - Store each equal string once and pass around Rcs or better yet does im have structurally shared strings...
-	FnPtr(Rc<str>),
-}
+// #[derive(Debug, Clone, PartialEq)]
+// pub enum StackItem {
+// 	U64(u64),
+// 	I64(i64),
+// 	F64(f64),
+// 	Bool(bool),
+// 	StrPtr(Rc<str>),
+// 	FnPtr(Rc<str>),
+// }
 
 pub fn interp(program: AnnotatedASTNode, stack: &mut Box<dyn TowerStack>) -> Result<(), RuntimeError> { // TODO: Make the tower language compatible with and interpreter able to run as a REPL
 	if let ASTNode::Module(tles, entry_point) = &program.node {

@@ -19,6 +19,7 @@
 			The following constants apply:
 				XID_START - Matches any unicode character in the XID_Start class
 				XID_CONTINUE - Matches any unicode character in the XID_Continue class
+				WHITESPACE - Matches any unicode character that has the White_Space property
 				ALPHA - Matches any unicode alphabetic character
 				ALPHANUM - Matches any unicode alphabetic character and "1234567890"
 				CHAR - Matches any unicode character
@@ -31,7 +32,7 @@
 
 module = ( s* function )* ;
 
-function = "fn" s+ identifier s+ block ;
+function = "fn" s+ identifier s* block ;
 
 block = "{" ( s* ( identifier | literal ) )* s* "}" ;
 
@@ -46,4 +47,5 @@ literal_integer = "-"? ( "0b" NUM_BIN+ ) | ( "0x" NUM_HEX+ ) | ( "0o" NUM_OCT+ )
 
 literal_float = "-"? NUM+ ( "." NUM* )? ( ( "e" | "E" ) "-"? NUM+ ) ;
 
-s = ( " " | "\t" | "\n" | "\r" )+ ;
+(* // TODO: Decide whether to go for all unicode whitespace characters or just the usual ones *)
+s = WHITESPACE ;

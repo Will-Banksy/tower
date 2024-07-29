@@ -160,7 +160,9 @@ impl<'a> Scanner<'a> { // TODO: Introduce a better naming scheme, with separatio
 		)
 	}
 
-	/// Attempts to match with the given function at least once, returning a list of all return values on success
+	/// Attempts to match with the given function at least once, returning a list of all return values on success,
+	/// None if none matched, and provides an error if one occurred
+	// TODO: Perhaps an error should be returned with a None as well as with a Some? In fact, why not just make this, and take_any, return a ScanResult?
 	pub fn take_some<R, E>(&mut self, f: impl FnMut(&mut Self) -> ScanResult<R, E>) -> Option<(Vec<R>, Option<E>)> {
 		let (rs, e) = self.take_any(f);
 
