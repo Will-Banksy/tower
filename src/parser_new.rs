@@ -78,7 +78,6 @@ fn function<'a>(scanner: &'a mut Scanner) -> ParseResult<(String, ASTNode<Annota
 		WithErr(e) => {
 			return WithErr(e);
 		}
-		Valid(_) => unreachable!(),
 		_ => unreachable!()
 	};
 
@@ -188,7 +187,7 @@ fn literal_string(scanner: &mut Scanner) -> ParseResult<Literal> {
 							'r' => '\r',
 							'0' => '\0',
 							'"' => '"',
-							_ => unimplemented!()
+							_ => unreachable!()
 						})
 					}),
 					Box::new(|scanner| {
@@ -243,8 +242,10 @@ fn literal_string(scanner: &mut Scanner) -> ParseResult<Literal> {
 fn literal_integer(scanner: &mut Scanner) -> ParseResult<Literal> {
 	let negative = scanner.take('-'); // TODO: Also pay attention to negatives - i.e. an integer with a negative symbol is probably signed
 
+	let start_of_int = scanner.cursor();
+
 	scanner.take_choice::<Literal, SyntaxError>(vec![
-		Box::new(|scanner| {
+		Box::new(move |scanner| {
 			brk!(scanner.take_str("0b").into());
 
 			let (chars, err) = brk!(ParseResult::from(scanner.take_some::<char, SyntaxError>(|scanner| {
@@ -256,19 +257,24 @@ fn literal_integer(scanner: &mut Scanner) -> ParseResult<Literal> {
 
 			let bin_str: String = chars.into_iter().collect();
 
-			let num = match u64::from_str_radix(&bin_str, 2) {
+			// TODO: Parse the suffix type indicator - or do that outside of the choice and reinterpret cast?
+
+			// TODO: Parse as u128 and from there, infer the type as the smallest that can fit the number (or just default to u32 and larger if necessary to fit the type)
+			//       This is where a good type inference system could come in handy too - although we won't really have any way of doing type inference before parsing the integer literal,
+			//       we can still perhaps cast the literal to bigger integers - We shouldn't cast down though
+			let num = match u128::from_str_radix(&bin_str, 2) {
 				Ok(v) => v,
 				Err(e) => {
 					match e.kind() {
 						IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => {
-							return WithErr(SyntaxError::new(SyntaxErrorKind::LiteralIntegerOverflow { num: bin_str, target_type: TowerType::U64 }, ASTNodeType::Literal, scanner.cursor()))
+							return WithErr(SyntaxError::new(SyntaxErrorKind::LiteralIntegerOverflow { num: format!("0b{bin_str}"), target_type: TowerType::U64 }, ASTNodeType::Literal, start_of_int))
 						}
-						_ => unreachable!() // This should be unreachable
+						_ => unreachable!()
 					}
 				}
 			};
 
-			Valid(Literal::U64(num))
+			Valid(Literal::U64(num as u64))
 		})
 		// TODO: Finish integer literal parsing
 	])
