@@ -4,51 +4,40 @@ use crate::{instructions::instructions, lexer::Literal, parser::{ASTNode, Annota
 
 #[derive(PartialEq, Clone, Debug)]
 pub enum TowerType {
+	U128,
 	U64,
+	U32,
+	U16,
+	U8,
+	I128,
 	I64,
+	I32,
+	I16,
+	I8,
 	F64,
+	F32,
 	Bool,
 	StrPtr,
 	FnPtr,
 	Generic(String)
 }
 
-// NOTE: The two below types are a draft idea of how I could represent types for analysis
-
-enum Type {
-	Opaque {
-		name: String,
-		size: Option<usize>, // NOTE: Alternatively to having an option field here, we could simply have the difference between sized/unsized types being whether the type implements the Sized trait
-		impls: im::Vector<Trait> // NOTE: Need more information about impl'd traits? (e.g. how to access the impl)
-	},
-	Transparent {
-		name: String,
-		fields: im::Vector<(String, Type)>,
-		/// Whether this type is a sum type/enum (true) or product type/struct (false)
-		sum_type: bool,
-		impls: im::Vector<Trait>
-	},
-}
-
-// Instead of a bool I could use this enum. "TypeType" lol
-enum TypeType {
-	Enum,
-	Struct
-}
-
-struct Trait {
-	name: String,
-	fns: im::Vector<(String, StackEffect)>,
-	assoc_types: im::Vector<(String, Type)>
-}
-
 impl Display for TowerType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		let gen_fmt_str;
         let string = match self {
+            TowerType::U128 => "u128",
             TowerType::U64 => "u64",
+            TowerType::U32 => "u32",
+            TowerType::U16 => "u16",
+            TowerType::U8 => "u8",
+            TowerType::I128 => "i128",
             TowerType::I64 => "i64",
+            TowerType::I32 => "i32",
+            TowerType::I16 => "i16",
+            TowerType::I8 => "i8",
             TowerType::F64 => "f64",
+            TowerType::F32 => "f32",
             TowerType::Bool => "bool",
             TowerType::StrPtr => "strptr",
             TowerType::FnPtr => "fnptr",
@@ -158,14 +147,23 @@ pub fn calc_stack_effects(tles: &HashMap<String, AnnotatedASTNode>, node: &Annot
 				Err(format!("[ERROR]: Entry point \"{}\" not found", entry_point))
 			}
 		},
-		ASTNode::Keyword(_) => unimplemented!(), // After parsing, there won't be any keywords
-		ASTNode::Instruction(_) => unimplemented!(), // No instructions at this point, and if there were execution wouldn't reach here anyway cause all instructions have effects from the start
+		ASTNode::Keyword(_) => unreachable!(), // After parsing, there won't be any keywords
+		ASTNode::Instruction(_) => unreachable!(), // No instructions at this point, and if there were execution wouldn't reach here anyway cause all instructions have effects from the start
 		ASTNode::Function(fn_node) => calc_stack_effects(tles, &fn_node, effects),
 		ASTNode::Literal(lit) => {
 			match lit {
+				Literal::U128(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::U128])),
 				Literal::U64(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::U64])),
+				Literal::U32(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::U32])),
+				Literal::U16(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::U16])),
+				Literal::U8(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::U8])),
+				Literal::I128(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::I128])),
 				Literal::I64(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::I64])),
+				Literal::I32(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::I32])),
+				Literal::I16(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::I16])),
+				Literal::I8(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::I8])),
 				Literal::F64(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::F64])),
+				Literal::F32(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::F32])),
 				Literal::Bool(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::Bool])),
 				Literal::String(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::StrPtr])),
 				Literal::FnPtr(_) => Ok(StackEffect::new_pushed(im::vector![TowerType::FnPtr])),

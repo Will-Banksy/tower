@@ -2,18 +2,24 @@
 use super::result::ScanResult::{self, Valid, WithErr, Unrecognised};
 
 pub struct Scanner<'a> {
+	file_path: String,
 	content: &'a str,
 	content_chars: Vec<char>,
 	cursor: usize
 }
 
 impl<'a> Scanner<'a> { // TODO: Introduce a better naming scheme, with separation of functions operating on the underlying data and higher order functions
-	pub fn new(content: &'a str) -> Self {
+	pub fn new(content: &'a str, file_path: impl Into<String>) -> Self {
 		Scanner {
+			file_path: file_path.into(),
 			content,
 			content_chars: content.chars().collect(),
 			cursor: 0
 		}
+	}
+
+	pub fn file_path<'b>(&'b self) -> &'b str {
+		&self.file_path
 	}
 
 	pub fn cursor(&self) -> usize {

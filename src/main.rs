@@ -7,10 +7,8 @@ fn main() {
 	// let tokens = tokenise(towercode).unwrap();
 	// println!("TOKENS: {:?}", tokens);
 
-	let mut node_id = NodeId::new();
-
-	let mut scanner = Scanner::new(&towercode);
-	let mut ast = match parser_new::parse(&mut scanner, &mut node_id) {
+	let mut scanner = Scanner::new(&towercode, "main.tower");
+	let parse_tree = match parser_new::parse(&mut scanner) {
 		ScanResult::Valid(ast) => ast,
 		ScanResult::WithErr(e) => {
 			e.print_error(&scanner, "main.tower", std::io::stderr()).unwrap();
@@ -20,14 +18,14 @@ fn main() {
 			eprintln!("No module recognised");
 			return;
 		}
-	}.annotated(node_id.inc());
+	}.wrap(scanner.file_path(), 0);
 
-	let effects = analyse(&mut ast, &mut node_id).unwrap();
+	// let effects = analyse(&mut ast, &mut node_id).unwrap();
 
 	// println!("\n\nABSTRACT SYNTAX TREE: {:#?}", ast);
 	// println!("\n\nSTACK EFFECTS: {:?}", effects);
 
-	println!("\n\nDETAILED AST: {}", print_detailed_ast(&ast, &effects, 0));
+	// println!("\n\nDETAILED AST: {}", print_detailed_ast(&ast, &effects, 0));
 
 	// if let ASTNode::Module(tles) = &ast {
 	// 	let fn_name = "main";
@@ -39,11 +37,11 @@ fn main() {
 	// let effects = analyse(&mut ast);
 	// println!("\n\nSTACK EFFECTS: {:?}", effects);
 
-	println!("\n\nINTERPRETER STARTING...");
-	let stack = Vec::<u8>::new();
-	if let Err(e) = interp(ast, &mut (Box::new(stack) as Box<dyn TowerStack>)) {
-		eprintln!("Runtime Error: {e:?}");
-	}
+	// println!("\n\nINTERPRETER STARTING...");
+	// let stack = Vec::<u8>::new();
+	// if let Err(e) = interp(ast, &mut (Box::new(stack) as Box<dyn TowerStack>)) {
+	// 	eprintln!("Runtime Error: {e:?}");
+	// }
 }
 
 fn print_detailed_ast(ast: &AnnotatedASTNode, effects: &HashMap<NodeId, StackEffect>, depth: u32) -> String { // TODO: Refactor to actually use the depth for printing (it's a mess rn)

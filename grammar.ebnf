@@ -48,5 +48,9 @@ literal_integer = "-"? ( "0b" NUM_BIN+ ) | ( "0x" NUM_HEX+ ) | ( "0o" NUM_OCT+ )
 
 literal_float = "-"? NUM+ ( "." NUM* )? ( ( "e" | "E" ) "-"? NUM+ ) ;
 
+literal_struct = identifier s* '{' s* ( identifier )* s* '}' ;
+
+literal_enum = identifier '::' ( identifier | literal_struct ) ;
+
 (* // TODO: Decide whether to go for all unicode whitespace characters or just the usual ones *)
 s = WHITESPACE ;

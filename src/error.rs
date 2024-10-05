@@ -1,17 +1,17 @@
 use std::{fmt::{self, Display}, io::{self, Write}};
 
-use crate::{analyser::TowerType, parser::ASTNodeType, parser_new::{scanner::Scanner, TokenType}};
+use crate::{analyser::TowerType, parser_new::{scanner::Scanner, tree::ParseTreeType, TokenType}};
 
 // TODO: Is there any better way to handle errors? Or will this do?
 
 pub struct SyntaxError {
 	kind: SyntaxErrorKind,
 	cursor: usize,
-	while_parsing: ASTNodeType
+	while_parsing: ParseTreeType
 }
 
 impl SyntaxError {
-	pub fn new(kind: SyntaxErrorKind, while_parsing: ASTNodeType, cursor: usize) -> Self {
+	pub fn new(kind: SyntaxErrorKind, while_parsing: ParseTreeType, cursor: usize) -> Self {
 		SyntaxError {
 			kind,
 			cursor,
@@ -20,12 +20,12 @@ impl SyntaxError {
 	}
 
 	/// Syntax sugar for `SyntaxError::new(SyntaxErrorKind::Expected(types), cursor)`
-	pub fn expected(types: Vec<TokenType>, while_parsing: ASTNodeType, cursor: usize) -> Self {
+	pub fn expected(types: Vec<TokenType>, while_parsing: ParseTreeType, cursor: usize) -> Self {
 		SyntaxError::new(SyntaxErrorKind::Expected(types), while_parsing, cursor)
 	}
 
 	pub fn empty(cursor: usize) -> Self {
-		SyntaxError::new(SyntaxErrorKind::None, ASTNodeType::None, cursor)
+		SyntaxError::new(SyntaxErrorKind::None, ParseTreeType::None, cursor)
 	}
 
 	/// Pretty-prints the error, including context retrieved from the scanner
@@ -62,6 +62,12 @@ impl Display for SyntaxError {
 			SyntaxErrorKind::LiteralIntegerOverflow { num, target_type } => {
 				write!(f, "while parsing {:?}, integer literal {} doesn't fit in target type {:?}", self.while_parsing, num, target_type)
 			}
+			SyntaxErrorKind::InvalidIntegerSize => {
+				write!(f, "while parsing {:?}, invalid integer size", self.while_parsing)
+			}
+			SyntaxErrorKind::NegativeUnsignedLiteral => {
+				write!(f, "while parsing {:?}, negative unsigned integer literal", self.while_parsing)
+			}
 		}
 	}
 }
@@ -73,7 +79,9 @@ pub enum SyntaxErrorKind {
 	LiteralIntegerOverflow {
 		num: String,
 		target_type: TowerType
-	}
+	},
+	InvalidIntegerSize,
+	NegativeUnsignedLiteral,
 }
 
 #[derive(Debug)]

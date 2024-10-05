@@ -25,6 +25,14 @@ impl<T, E> ScanResult<T, E> {
 		}
 	}
 
+	pub fn optional(self) -> ScanResult<Option<T>, E> {
+		match self {
+			Self::Valid(v) => ScanResult::Valid(Some(v)),
+			Self::Unrecognised => ScanResult::Valid(None),
+			Self::WithErr(e) => ScanResult::WithErr(e)
+		}
+	}
+
 	pub fn map<U>(self, f: impl FnOnce(T) -> U) -> ScanResult<U, E> {
 		match self {
 			Valid(v) => Valid(f(v)),

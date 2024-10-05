@@ -113,6 +113,7 @@ impl TowerStack for Vec<u8> {
 			Literal::Bool(val) => self.push_bool(*val),
 			Literal::String(val) => self.push_strptr(val.clone().into()),
 			Literal::FnPtr(val) => self.push_fnptr(val.clone().into()),
+			_ => todo!()
 		}
 	}
 }
