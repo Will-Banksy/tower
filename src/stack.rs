@@ -1,7 +1,7 @@
 use core::slice;
 use std::rc::Rc;
 
-use crate::{error::RuntimeError, lexer::Literal};
+use crate::{error::RuntimeError, parser::tree::Literal};
 
 pub trait TowerStack {
 	fn pop_bool(&mut self) -> Result<bool, RuntimeError>;

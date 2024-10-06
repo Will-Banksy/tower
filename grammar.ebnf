@@ -34,6 +34,8 @@ module = ( s* function )* ;
 
 function = "fn" s+ identifier s* block ;
 
+structure = "struct" s+ identifier s* '{' ( s* identifier s* ':' ( identifier ) )* s* '}' ;
+
 (* // NOTE: Add necessary spaceing between items in a block? E.g. currently "this"isvalid as a string literal and identifier *)
 block = "{" ( s* ( identifier | literal ) )* s* "}" ;
 
@@ -47,10 +49,10 @@ literal_string = '"' ( ( '\' ( '\' | 'n' | 't' | 'r' | '0' | '"' | ( 'x' NUM_HEX
 literal_integer = "-"? ( "0b" NUM_BIN+ ) | ( "0x" NUM_HEX+ ) | ( "0o" NUM_OCT+ ) | ( NUM+ ) ( ( "u" | "i" ) ("128" | "64" | "32" | "16" | "8" )? )? ;
 
 literal_float = "-"? NUM+ ( "." NUM* )? ( ( "e" | "E" ) "-"? NUM+ ) ;
-
+(*
 literal_struct = identifier s* '{' s* ( identifier )* s* '}' ;
 
 literal_enum = identifier '::' ( identifier | literal_struct ) ;
-
+*)
 (* // TODO: Decide whether to go for all unicode whitespace characters or just the usual ones *)
 s = WHITESPACE ;

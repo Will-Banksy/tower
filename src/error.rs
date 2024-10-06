@@ -1,9 +1,10 @@
 use std::{fmt::{self, Display}, io::{self, Write}};
 
-use crate::{analyser::TowerType, parser_new::{scanner::Scanner, tree::ParseTreeType, TokenType}};
+use crate::{analyser::{ttype::Type, TowerType}, parser::{scanner::Scanner, tree::ParseTreeType, TokenType}};
 
 // TODO: Is there any better way to handle errors? Or will this do?
 
+#[derive(Clone)]
 pub struct SyntaxError {
 	kind: SyntaxErrorKind,
 	cursor: usize,
@@ -68,10 +69,26 @@ impl Display for SyntaxError {
 			SyntaxErrorKind::NegativeUnsignedLiteral => {
 				write!(f, "while parsing {:?}, negative unsigned integer literal", self.while_parsing)
 			}
+			SyntaxErrorKind::IncompatibleTypes { source, dest } => {
+				write!(f, "while parsing {:?}, source type {source} is incompatible with dest type {dest}", self.while_parsing)
+			}
+			SyntaxErrorKind::TypeIsNotFunction { tname } => {
+				write!(f, "while parsing {:?}, expected function instead of type name {tname}", self.while_parsing)
+			}
+			SyntaxErrorKind::FunctionIsNotType { fname } => {
+				write!(f, "while parsing {:?}, expected type name instead of function {fname}", self.while_parsing)
+			}
+			SyntaxErrorKind::NoSuchFunction { fname } => {
+				write!(f, "while parsing {:?}, function {fname} was not found in scope", self.while_parsing)
+			}
+			SyntaxErrorKind::NoSuchType { tname } => {
+				write!(f, "while parsing {:?}, type {tname} was not found in scope", self.while_parsing)
+			}
 		}
 	}
 }
 
+#[derive(Clone)]
 pub enum SyntaxErrorKind {
 	None,
 	Expected(Vec<TokenType>),
@@ -82,6 +99,22 @@ pub enum SyntaxErrorKind {
 	},
 	InvalidIntegerSize,
 	NegativeUnsignedLiteral,
+	IncompatibleTypes { // FIXME: We need another type for analysis types cause this ain't it. Some information relevant to parsing but not analysis is required in SyntaxError
+		source: Type,
+		dest: Type
+	},
+	TypeIsNotFunction {
+		tname: String,
+	},
+	FunctionIsNotType {
+		fname: String,
+	},
+	NoSuchFunction {
+		fname: String,
+	},
+	NoSuchType {
+		tname: String,
+	}
 }
 
 #[derive(Debug)]

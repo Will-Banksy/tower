@@ -1,207 +1,465 @@
-use core::fmt;
-use std::{collections::HashMap, ops::Deref, rc::Rc};
+pub mod scanner;
+pub mod result;
+pub mod tree;
 
-use crate::{error::RuntimeError, lexer::{KeywordType, Literal, Token}, stack::TowerStack};
+use std::num::IntErrorKind;
 
-pub type Instruction = Rc<dyn Fn(&mut Box<dyn TowerStack>, &HashMap<String, AnnotatedASTNode>) -> Result<(), RuntimeError>>;
+use result::ScanResult::{self, Valid, WithErr, Unrecognised};
+use scanner::Scanner;
+use tree::{ParseTree, ParseTreeNode, ParseTreeType, Literal};
+use unicode_xid::UnicodeXID;
 
-#[derive(Debug)]
-pub enum ASTNodeType {
+use crate::{analyser::TowerType, brk, error::{SyntaxError, SyntaxErrorKind}};
+
+type ParseResult<T> = ScanResult<T, SyntaxError>;// Option<Result<T, SyntaxError>>;
+
+#[derive(Debug, Clone)]
+pub enum TokenType { // TODO: Evaluate these, and ideally have these represented in the grammar
 	None,
-	Module,
-	Function,
-	Keyword,
-	Literal,
 	Identifier,
-	Block
+	LCurlyParen,
+	RCurlyParen,
+	Whitespace,
+	Literal,
+	Number,
+	KeywordFn,
+	Quote,
+	EscapeSequence,
+	Block,
+	Colon
 }
 
-#[derive(Clone)]
-pub enum ASTNode<N: Clone> {
-	Module(HashMap<String, N>, String),
-	Function(Box<N>), // Box is just so the enum isn't recursive in size
-	Keyword(KeywordType),
-	Literal(Literal),
-	Identifier(String),
-	/// NOTE: This should not be used
-	Instruction(Instruction),
-	Block(Vec<N>),
+pub fn parse(scanner: &mut Scanner) -> ParseResult<ParseTreeNode> {
+	let cursor = scanner.cursor();
+
+	let ret = brk!(module(scanner));
+
+	scanner.take_any(s);
+
+	if scanner.has_next() {
+		return WithErr(SyntaxError::new(SyntaxErrorKind::Unexpected, ParseTreeType::Module, scanner.cursor()));
+	}
+
+	Valid(ret.wrap(scanner.file_path(), cursor))
 }
 
-// impl<O, N> ASTNode<O> where O: Clone, N: Clone {
-// 	fn into_new<F>(node: ASTNode<O>, f: F) where F: Fn(ASTNode<O>) -> ASTNode<N> {
-// 		todo!()
-// 	}
-// }
+/// Returns a Module ASTNode
+fn module(scanner: &mut Scanner) -> ParseResult<ParseTree> {
+	eprintln!("module");
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct NodeId {
-	inner: u64
+	let (nodes, err) = scanner.take_any(|scanner| {
+		scanner.take_any(s);
+
+		scanner.take_choice(vec![
+			Box::new(|scanner| {
+				let cursor = scanner.cursor();
+				let (name, body) = brk!(function(scanner));
+
+				Valid((name, body.wrap(scanner.file_path(), cursor)))
+			}),
+			Box::new(|scanner| {
+				let cursor = scanner.cursor();
+				let (name, structure) = brk!(structure(scanner));
+
+				Valid((name, structure.wrap(scanner.file_path(), cursor)))
+			})
+		])
+	});
+	if let Some(e) = err {
+		return WithErr(e);
+	}
+
+	let elems = nodes.into_iter().collect();
+
+	eprintln!("module end");
+
+	Valid(ParseTree::Module { name: "".into(), elems })
 }
 
-impl NodeId {
-	pub const fn new() -> Self {
-		NodeId {
-			inner: 0
+/// Returns a Function ASTNode, paired with the function name
+fn function(scanner: &mut Scanner) -> ParseResult<(String, ParseTree)> {
+	eprintln!("function");
+
+	brk!(ParseResult::from(scanner.take_str("fn")));
+
+	brk!(ParseResult::from(scanner.take_some(s)).require(SyntaxError::expected(vec![TokenType::Whitespace], ParseTreeType::Function, scanner.cursor())));//.ok_or(SyntaxError::expected(vec![TokenType::Whitespace], ASTNodeType::Function, scanner.cursor()));
+
+	let fn_name = match identifier(scanner).require(SyntaxError::expected(vec![TokenType::Identifier], ParseTreeType::Function, scanner.cursor())) {
+		Valid(ParseTree::Identifier(s)) => s,
+		WithErr(e) => {
+			return WithErr(e);
 		}
-	}
+		_ => unreachable!()
+	};
 
-	/// Increments inner value by 1 and returns copy of self
-	pub fn inc(&mut self) -> Self {
-		self.inner += 1;
-		*self
-	}
-}
+	scanner.take_any(s);
 
-impl Deref for NodeId {
-	type Target = u64;
+	let fn_body = brk!(block(scanner).require(SyntaxError::expected(vec![TokenType::Block], ParseTreeType::Function, scanner.cursor())));//.ok_or(SyntaxError::expected(vec![TokenType::Block], scanner.cursor()))?;
 
-	fn deref(&self) -> &Self::Target {
-		&self.inner
-	}
-}
+	eprintln!("function end");
 
-#[derive(Clone, Debug)]
-pub struct AnnotatedASTNode {
-	pub node: ASTNode<AnnotatedASTNode>,
-	pub id: NodeId
-}
-
-impl AnnotatedASTNode {
-	pub fn new(node: ASTNode<AnnotatedASTNode>, id: NodeId) -> Self {
-		Self {
-			node,
-			id
+	Valid((
+		fn_name.to_string(),
+		ParseTree::Function {
+			name: fn_name.to_string(),
+			body: fn_body
 		}
-	}
+	))
 }
 
-// #[derive(Clone)]
-// pub struct ASTNode {
-// 	pub n_type: ASTNodeType,
-// 	pub effect: Option<StackEffect>
-// }
+fn structure(scanner: &mut Scanner) -> ParseResult<(String, ParseTree)> {
+	eprintln!("struct");
 
-impl ASTNode<AnnotatedASTNode> {
-	pub fn annotated(self, id: NodeId) -> AnnotatedASTNode {
-		AnnotatedASTNode::new(self, id)
+	brk!(scanner.take_str("struct").into());
+
+	brk!(ParseResult::from(scanner.take_some(s)).require(SyntaxError::expected(vec![TokenType::Whitespace], ParseTreeType::Struct, scanner.cursor())));
+
+	let name = match brk!(identifier(scanner).require(SyntaxError::expected(vec![TokenType::Identifier], ParseTreeType::Struct, scanner.cursor()))) {
+		ParseTree::Identifier(s) => s,
+		_ => unreachable!()
+	};
+
+	scanner.take_any(s);
+
+	brk!(ParseResult::from(scanner.take('{')).require(SyntaxError::expected(vec![TokenType::LCurlyParen], ParseTreeType::Struct, scanner.cursor())));
+
+	let (fields, err) = scanner.take_any::<(String, String), SyntaxError>(|scanner| {
+		scanner.take_any(s);
+
+		let field_name = match brk!(identifier(scanner)) {
+			ParseTree::Identifier(s) => s,
+			_ => unreachable!()
+		};
+
+		scanner.take_any(s);
+
+		brk!(ParseResult::from(scanner.take(':')).require(SyntaxError::expected(vec![TokenType::Colon], ParseTreeType::Struct, scanner.cursor())));
+
+		scanner.take_any(s);
+
+		let field_type = match brk!(ParseResult::from(identifier(scanner)).require(SyntaxError::expected(vec![TokenType::Identifier], ParseTreeType::Struct, scanner.cursor()))) {
+			ParseTree::Identifier(s) => s,
+			_ => unreachable!()
+		};
+
+		Valid((field_name, field_type))
+	});
+	if let Some(e) = err {
+		return WithErr(e);
 	}
+
+	scanner.take_any(s);
+
+	brk!(ParseResult::from(scanner.take('}')).require(SyntaxError::expected(vec![TokenType::RCurlyParen], ParseTreeType::Struct, scanner.cursor())));
+
+	let fields: im::HashMap<String, String> = fields.into_iter().collect();
+
+	eprintln!("struct end");
+
+	Valid((
+		name.clone(),
+		ParseTree::Struct { name, fields }
+	))
 }
 
-impl<N> fmt::Debug for ASTNode<N> where N: Clone + fmt::Debug {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		match self {
-			ASTNode::Module(arg0, _arg1) => f.debug_tuple("Module").field(arg0).finish(),
-			ASTNode::Function(arg0) => f.debug_tuple("Function").field(arg0).finish(),
-			ASTNode::Keyword(arg0) => f.debug_tuple("Keyword").field(arg0).finish(),
-			ASTNode::Literal(arg0) => f.debug_tuple("Literal").field(arg0).finish(),
-			ASTNode::Identifier(arg0) => f.debug_tuple("Word").field(arg0).finish(),
-			ASTNode::Instruction(_) => f.debug_tuple("Instruction").finish(),
-			ASTNode::Block(arg0) => f.debug_tuple("Block").field(arg0).finish(),
-		}
-	}
-}
+/// Returns a Block ASTNode
+fn block(scanner: &mut Scanner) -> ParseResult<im::Vector<ParseTreeNode>> {
+	eprintln!("block");
 
-pub fn parse_tokens(tokens: Vec<Token>, node_id: &mut NodeId) -> AnnotatedASTNode { // TODO: Develop a system for making errors aware of the context
-	// Top level elements
-	let mut tles: HashMap<String, AnnotatedASTNode> = HashMap::new();
+	brk!(scanner.take('{').into());
 
-	let mut id = node_id;
+	let (nodes, err) = scanner.take_any(|scanner| -> ParseResult<ParseTreeNode> {
+		scanner.take_any(s);
 
-	let mut i = 0;
-	while i < tokens.len() {
-		if let Token::Keyword(KeywordType::Fn) = &tokens[i] {
-			if let Some(Token::Identifier(fn_name)) = tokens.get(i + 1) {
-				if let Some(Token::Keyword(KeywordType::FnDef)) = tokens.get(i + 2) {
-					let fn_body: Vec<AnnotatedASTNode> = {
-						let mut body_toks = Vec::new();
-						i += 3;
-						while i < tokens.len() {
-							if let Token::Keyword(KeywordType::FnEnd) = tokens[i] {
-								break;
-							}
-							body_toks.push(tokens[i].clone());
-							i += 1;
-						}
+		let cursor = scanner.cursor();
 
-						define_anon_fns(&mut tles, &mut body_toks, &mut id);
+		let ret = brk!(scanner.take_choice(vec![
+			Box::new(identifier),
+			Box::new(literal)
+		]));
 
-						body_toks.into_iter().filter_map(|tok| {
-							token_to_node(tok, &mut id)
-						}).collect()
-					};
-					tles.insert(fn_name.to_string(),
-						AnnotatedASTNode::new(
-							ASTNode::Function(Box::new(
-								AnnotatedASTNode::new(ASTNode::Block(fn_body), id.inc())
-							)),
-							id.inc()
-						)
-					);
-				}
-			}
-		}
-		i += 1;
+		scanner.take_any(s);
+
+		Valid(ret.wrap(scanner.file_path(), cursor))
+	});
+	if let Some(e) = err {
+		return WithErr(e);
 	}
 
-	AnnotatedASTNode::new(
-		ASTNode::Module(tles, "main".into()),
-		id.inc()
+	scanner.take_any(s);
+
+	brk!(ParseResult::from(scanner.take('}')).require(SyntaxError::expected(vec![TokenType::Identifier, TokenType::Literal, TokenType::RCurlyParen], ParseTreeType::Function, scanner.cursor())));
+
+	eprintln!("block end");
+
+	Valid(
+		nodes.into_iter().collect()
 	)
 }
 
-fn define_anon_fns(tles: &mut HashMap<String, AnnotatedASTNode>, tokens: &mut Vec<Token>, id: &mut NodeId) {
-	let mut i = 0;
-	while i < tokens.len() {
-		if let Token::Keyword(KeywordType::AnonFnOpen) = tokens[i] {
-			if let Some(fnclose_idx) = get_matching_fnclose(&tokens, i) {
-				let mut anon_fn_body_toks: Vec<Token> = tokens.drain(i..=fnclose_idx).collect();
-				anon_fn_body_toks.remove(0);
-				anon_fn_body_toks.remove(anon_fn_body_toks.len() - 1);
-				let anon_fn_name = format!("anon_{}", uuid::Uuid::new_v4());
+/// Returns an Identifier ASTNode
+fn identifier(scanner: &mut Scanner) -> ParseResult<ParseTree> {
+	eprintln!("identifier");
 
-				define_anon_fns(tles, &mut anon_fn_body_toks, id);
+	let first = brk!(scanner.take_if(|c| {
+		UnicodeXID::is_xid_start(c) || c == '_'
+	}).into());
 
-				let anon_fn_body = anon_fn_body_toks.into_iter().filter_map(|tok| token_to_node(tok, id)).collect();
+	let mut ident = scanner.take_until(|c| UnicodeXID::is_xid_continue(c));
 
-				tles.insert(anon_fn_name.clone(), AnnotatedASTNode::new(
-					ASTNode::Function(Box::new(
-						AnnotatedASTNode::new(ASTNode::Block(anon_fn_body), id.inc())
-					)),
-					id.inc()
-				));
-				tokens.insert(i, Token::Literal(Literal::FnPtr(anon_fn_name)))
+	ident.insert(0, first);
+
+	eprintln!("identifier end");
+
+	Valid(ParseTree::Identifier(ident.into()))
+}
+
+/// Returns a Literal ASTNode
+fn literal(scanner: &mut Scanner) -> ParseResult<ParseTree> {
+	eprintln!("literal");
+
+	let ret = brk!(scanner.take_choice(vec![
+		Box::new(literal_string),
+		Box::new(literal_integer),
+		Box::new(literal_float)
+	]).map(|lit| ParseTree::Literal(lit)));
+
+	eprintln!("literal end");
+
+	Valid(ret)
+}
+
+/// Returns a Literal
+fn literal_string(scanner: &mut Scanner) -> ParseResult<Literal> {
+	eprintln!("literal_string");
+
+	brk!(scanner.take('\"').into());
+
+	let (chars, err) = scanner.take_any::<char, SyntaxError>(|scanner| {
+		scanner.take_choice::<char, SyntaxError>(vec![
+			Box::new(|scanner| {
+				if !scanner.take('\\') {
+					return Unrecognised;
+				}
+
+				scanner.take_choice::<char, SyntaxError>(vec![
+					Box::new(|scanner| {
+						ParseResult::from(scanner.take_of([
+							'\\',
+							'n',
+							't',
+							'r',
+							'0',
+							'"',
+						].iter())).map(|c| match c {
+							'\\' => '\\',
+							'n' => '\n',
+							't' => '\t',
+							'r' => '\r',
+							'0' => '\0',
+							'"' => '"',
+							_ => unreachable!()
+						})
+					}),
+					Box::new(|scanner| {
+						brk!(scanner.take('x').into());
+
+						let mut sb = String::new();
+
+						for _ in 0..2 {
+							sb.push(brk!(ParseResult::from(scanner.take_if(|c| {
+								c.is_ascii_hexdigit()
+							})).require(SyntaxError::expected(vec![TokenType::EscapeSequence], ParseTreeType::Literal, scanner.cursor()))))
+						}
+
+						let hex_val = u32::from_str_radix(&sb.trim(), 16).unwrap();
+
+						Valid(
+							unsafe { char::from_u32_unchecked(hex_val) } // FIXME: This may cause issues
+						)
+					})
+				]).require(SyntaxError::expected(vec![TokenType::EscapeSequence], ParseTreeType::Literal, scanner.cursor()))
+			}),
+			Box::new(|scanner| {
+				match scanner.pop() {
+					Some(c) => {
+						if c == '\"' {
+							Unrecognised
+						} else {
+							Valid(c)
+						}
+					}
+					None => {
+						WithErr(SyntaxError::expected(vec![TokenType::Quote], ParseTreeType::Literal, scanner.cursor()))
+					}
+				}
+			})
+		])
+	});
+	if let Some(e) = err {
+		return WithErr(e);
+	}
+
+	let string = chars.into_iter().collect();
+
+	scanner.advance(1);
+
+	eprintln!("literal_string end @ {}", scanner.cursor());
+
+	Valid(Literal::String(string))
+}
+
+/// Returns a Literal
+fn literal_integer(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO: To allow better type inference, we could perhaps only store the literal strings for now, and then turn the strings into integers once we've decided the types
+	// let i = 1000000000000000000; // Rust seems to default to i32 unless explicitly told otherwise for literals
+	let negative = scanner.take('-');
+
+	let start_of_int = scanner.cursor();
+
+	let (num, denary) = brk!(scanner.take_choice::<(u128, bool), SyntaxError>(vec![
+		Box::new(move |scanner| { // Parse binary literal
+			literal_integer_radix(scanner, 2).map(|n| (n, false))
+		}),
+		Box::new(move |scanner| { // Parse octal literal
+			literal_integer_radix(scanner, 8).map(|n| (n, false))
+		}),
+		Box::new(move |scanner| { // Parse hex literal
+			literal_integer_radix(scanner, 16).map(|n| (n, false))
+		}),
+		Box::new(move |scanner| { // Parse denary literal
+			literal_integer_radix(scanner, 10).map(|n| (n, true))
+		})
+	]));
+
+	let start_of_suffix = scanner.cursor();
+
+	let suffix = brk!(scanner.try_take(|scanner| {
+			let signed = brk!(scanner.take_of(['u', 'i'].iter()).into()) == 'i';
+
+			let bits = brk!(literal_integer_radix(scanner, 10).optional());
+
+			Valid((signed, bits))
+		}
+	).optional());
+
+	let num_type = match suffix {
+		Some((signed, Some(bits))) => {
+			if !signed && negative {
+				return WithErr(SyntaxError::new(SyntaxErrorKind::NegativeUnsignedLiteral, ParseTreeType::Literal, start_of_suffix));
+			}
+
+			match bits {
+				8 => { if signed { TowerType::I8 } else { TowerType::U8 } },
+				16 => { if signed { TowerType::I16 } else { TowerType::U16 } },
+				32 => { if signed { TowerType::I32 } else { TowerType::U32 } },
+				64 => { if signed { TowerType::I64 } else { TowerType::U64 } },
+				128 => { if signed { TowerType::I128 } else { TowerType::U128 } },
+				_ => return WithErr(SyntaxError::new(SyntaxErrorKind::InvalidIntegerSize, ParseTreeType::Literal, start_of_suffix + 1))
 			}
 		}
-		i += 1;
-	}
+		Some((signed, None)) => {
+			if !signed && negative {
+				return WithErr(SyntaxError::new(SyntaxErrorKind::NegativeUnsignedLiteral, ParseTreeType::Literal, start_of_suffix));
+			}
+
+			if signed {
+				TowerType::I32
+			} else {
+				TowerType::U32
+			}
+		}
+		None => {
+			if !denary {
+				TowerType::U32
+			} else {
+				TowerType::I32
+			}
+		}
+	};
+
+	let literal = match num_type {
+		TowerType::U128 => Literal::U128(num),
+		TowerType::U64 => Literal::U64(brk!(downcast_uint(num, TowerType::U64, start_of_int))),
+		TowerType::U32 => Literal::U32(brk!(downcast_uint(num, TowerType::U32, start_of_int))),
+		TowerType::U16 => Literal::U16(brk!(downcast_uint(num, TowerType::U16, start_of_int))),
+		TowerType::U8 => Literal::U8(brk!(downcast_uint(num, TowerType::U8, start_of_int))),
+		TowerType::I128 => Literal::I128(num as i128),
+		TowerType::I64 => Literal::I64(brk!(downcast_uint::<u64, _>(num, TowerType::U64, start_of_int)) as i64),
+		TowerType::I32 => Literal::I32(brk!(downcast_uint::<u32, _>(num, TowerType::U32, start_of_int)) as i32),
+		TowerType::I16 => Literal::I16(brk!(downcast_uint::<u16, _>(num, TowerType::U16, start_of_int)) as i16),
+		TowerType::I8 => Literal::I8(brk!(downcast_uint::<u8, _>(num, TowerType::U8, start_of_int)) as i8),
+		_ => unreachable!()
+	};
+
+	Valid(literal)
 }
 
-fn get_matching_fnclose(tokens: &Vec<Token>, idx: usize) -> Option<usize> {
-	let mut depth = 1;
-	for i in (idx + 1)..tokens.len() {
-		match tokens[i] {
-			Token::Keyword(KeywordType::AnonFnOpen) => depth += 1,
-			Token::Keyword(KeywordType::AnonFnClose) => {
-				depth -= 1;
-				if depth == 0 {
-					return Some(i);
-				}
-			},
-			_ => ()
+fn downcast_uint<T, F>(num: F, num_type: TowerType, cursor: usize) -> ParseResult<T> where T: TryFrom<F>, F: ToString + Copy {
+	match num.try_into().ok() {
+		Some(n) => Valid(n),
+		None => {
+			WithErr(SyntaxError::new(SyntaxErrorKind::LiteralIntegerOverflow { num: num.to_string(), target_type: num_type }, ParseTreeType::Literal, cursor))
 		}
 	}
-	None
 }
 
-fn token_to_node(token: Token, id: &mut NodeId) -> Option<AnnotatedASTNode> {
-	if let Token::Literal(lit_val) = token {
-		Some(AnnotatedASTNode::new(ASTNode::Literal(lit_val), id.inc()))
-	} else if let Token::Identifier(ident_val) = token {
-		Some(AnnotatedASTNode::new(ASTNode::Identifier(ident_val), id.inc()))
-	} else if let Token::Keyword(kw_val) = token {
-		Some(AnnotatedASTNode::new(ASTNode::Keyword(kw_val), id.inc()))
-	} else {
-		None
+/// Parses an integer (including prefix, not including suffix) using radix (radix ∈ [2, 8, 10, 16])
+fn literal_integer_radix(scanner: &mut Scanner, radix: u8) -> ParseResult<u128> {
+	let start_of_int = scanner.cursor();
+
+	let is_radix_digit = match radix {
+		2 => |c: char| { c == '0' || c == '1' },
+		8 => |c: char| { ['0', '1', '2', '3', '4', '5', '6', '7'].iter().find(|&&oc| oc == c).is_some() },
+		10 => |c: char| { c.is_ascii_digit() },
+		16 => |c: char| { c.is_ascii_hexdigit() },
+		_ => unimplemented!("Illegal radix value: {radix}")
+	};
+
+	let prefix = match radix {
+		2 => "0b",
+		8 => "0o",
+		10 => "",
+		16 => "0x",
+		_ => unreachable!()
+	};
+
+	let prefix_required = !prefix.is_empty();
+
+	brk!(scanner.take_str(prefix).into());
+
+	let result = ParseResult::from(scanner.take_some::<char, SyntaxError>(|scanner| {
+		scanner.take_if(is_radix_digit).into()
+	}));
+	let (chars, err) = match prefix_required {
+		true => brk!(result.require(SyntaxError::expected(vec![TokenType::Number], ParseTreeType::Literal, scanner.cursor()))),
+		false => brk!(result)
+	};
+	if let Some(e) = err {
+		return WithErr(e);
 	}
+
+	let num_str: String = chars.into_iter().collect();
+
+	let num = match u128::from_str_radix(&num_str, radix as u32) {
+		Ok(v) => v,
+		Err(e) => {
+			match e.kind() {
+				IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => {
+					return WithErr(SyntaxError::new(SyntaxErrorKind::LiteralIntegerOverflow { num: format!("{prefix}{num_str}"), target_type: TowerType::U128 }, ParseTreeType::Literal, start_of_int))
+				}
+				_ => unreachable!()
+			}
+		}
+	};
+
+	Valid(num)
+}
+
+/// Returns a Literal
+fn literal_float(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
+	Unrecognised
+}
+
+fn s(scanner: &mut Scanner) -> ParseResult<()> {
+	scanner.take_if(|c| c.is_whitespace()).map(|_| ()).into()
 }

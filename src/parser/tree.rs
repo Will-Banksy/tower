@@ -11,9 +11,9 @@ pub enum ParseTreeType {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParseTreeNode {
-	file_path: String,
-	cursor: usize,
-	tree: ParseTree
+	pub file_path: String,
+	pub cursor: usize,
+	pub tree: ParseTree
 }
 
 #[derive(Debug, Clone, PartialEq)]

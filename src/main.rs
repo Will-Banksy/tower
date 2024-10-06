@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use tower::{analyser::{analyse, StackEffect}, interpreter::interp, parser::{ASTNode, AnnotatedASTNode, NodeId}, parser_new::{self, result::ScanResult, scanner::Scanner}, stack::TowerStack};
+use tower::{analyser::{self, analyse, tree::{TypedTree, TypedTreeNode}}, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}, stack::TowerStack};
 
 fn main() {
 	let towercode = include_str!("../main.tower");
@@ -8,17 +6,36 @@ fn main() {
 	// println!("TOKENS: {:?}", tokens);
 
 	let mut scanner = Scanner::new(&towercode, "main.tower");
-	let parse_tree = match parser_new::parse(&mut scanner) {
-		ScanResult::Valid(ast) => ast,
+	let parse_tree = match parser::parse(&mut scanner) {
+		ScanResult::Valid(tree) => tree,
 		ScanResult::WithErr(e) => {
-			e.print_error(&scanner, "main.tower", std::io::stderr()).unwrap();
+			e.print_error(&scanner, scanner.file_path(), std::io::stderr()).unwrap();
 			return;
 		}
 		ScanResult::Unrecognised => {
 			eprintln!("No module recognised");
 			return;
 		}
-	}.wrap(scanner.file_path(), 0);
+	};
+	let typed_tree = match analyser::analyse(&parse_tree) {
+		ScanResult::Valid(tree) => tree,
+		ScanResult::WithErr(e) => {
+			e.print_error(&scanner, scanner.file_path(), std::io::stderr()).unwrap();
+			return;
+		}
+		ScanResult::Unrecognised => {
+			eprintln!("Unrecognised parse tree");
+			return;
+		}
+	};
+
+	println!("\n=== PARSE TREE ===\n");
+
+	println!("{}", dump_parse_tree(&parse_tree, 0));
+
+	println!("\n=== TYPED TREE ===\n");
+
+	println!("{}", dump_typed_tree(&typed_tree, 0));
 
 	// let effects = analyse(&mut ast, &mut node_id).unwrap();
 
@@ -44,15 +61,24 @@ fn main() {
 	// }
 }
 
-fn print_detailed_ast(ast: &AnnotatedASTNode, effects: &HashMap<NodeId, StackEffect>, depth: u32) -> String { // TODO: Refactor to actually use the depth for printing (it's a mess rn)
-	match &ast.node {
-		ASTNode::Module(tles, entry_point) => format!("Module(entry_point: {entry_point}, tles: [\n{}])", tles.iter().map(|(tle_name, tle)| format!("\t{tle_name}: {},\n", print_detailed_ast(tle, effects, depth + 1))).collect::<String>()),
-		ASTNode::Function(node) => format!("Function({})", print_detailed_ast(node, effects, depth + 1)),
-		ASTNode::Keyword(_) => unimplemented!(),
-		ASTNode::Literal(lit) => format!("Literal({lit:?}, stack_effect: {})", effects.get(&ast.id).unwrap()),
-		ASTNode::Identifier(word) => format!("Word({word}, stack_effect: {})", effects.get(&ast.id).unwrap()),
-		ASTNode::Instruction(_) => format!("Instruction(stack_effect: {})", effects.get(&ast.id).unwrap()),
-		ASTNode::Block(nodes) => format!("Block(nodes: [\n{}\t], stack_effect: {})", nodes.iter().map(|node| format!("\t\t{},\n", print_detailed_ast(node, effects, depth + 1))).collect::<String>(), effects.get(&ast.id).unwrap()),
+fn dump_parse_tree(tree: &ParseTreeNode, depth: u32) -> String { // TODO: Refactor to actually use the depth for printing (it's a mess rn)
+	match &tree.tree {
+		ParseTree::Module { name, elems } => format!("Module(name: {name}, elems: [\n{}])", elems.iter().map(|(elem_name, elem)| format!("\t{elem_name}: {},\n", dump_parse_tree(elem, depth + 1))).collect::<String>()),
+		ParseTree::Function { name, body } => format!("Function(name: {name}, body: [\n{}\t])", body.iter().map(|node| format!("\t\t{},\n", dump_parse_tree(node, depth + 1))).collect::<String>()),
+		ParseTree::Literal(lit) => format!("Literal({lit:?})"),
+		ParseTree::Identifier(word) => format!("Identifier({word})"),
+		ParseTree::Struct { name, fields } => format!("Struct(name: {name}, fields: [\n{}\t])", fields.iter().map(|(fname, ftype)| format!("\t\t{fname}: {ftype},\n")).collect::<String>()),
+		ParseTree::Enum { name, fields } => format!("Struct(name: {name}, [\n{}\t])", fields.iter().map(|(fname, ftype)| format!("\t\t{fname} {ftype},\n")).collect::<String>()),
+	}
+}
+
+fn dump_typed_tree(tree: &TypedTreeNode, depth: u32) -> String {
+	match &tree.tree {
+		TypedTree::Module { name, elems } => format!("Module(name: {name}, elems: [\n{}])", elems.iter().map(|(elem_name, elem)| format!("\t{elem_name}: {},\n", dump_typed_tree(elem, depth + 1))).collect::<String>()),
+		TypedTree::Function { name, effect, body } => format!("Function(name: {name}, effect: {effect}, body: [\n{}\t])", body.iter().map(|node| format!("\t\t{},\n", dump_typed_tree(node, depth + 1))).collect::<String>()),
+		TypedTree::Type(ty) => format!("Type({ty})"),
+		TypedTree::Word(word) => format!("Word({word})"),
+		TypedTree::Literal { ty, value } => format!("Literal(type: {ty}, value: (unable to be displayed))"),
 	}
 }
 

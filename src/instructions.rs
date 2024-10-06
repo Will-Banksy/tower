@@ -1,50 +1,50 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{analyser::{StackEffect, TowerType}, error::RuntimeError, interpreter::exec_fn, parser::{AnnotatedASTNode, Instruction}, stack::TowerStack};
+// use crate::{analyser::{StackEffect, TowerType}, error::RuntimeError, interpreter::exec_fn, parser::{AnnotatedASTNode, Instruction}, stack::TowerStack};
 
-pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
-	im::hashmap! {
-		"println_str".into() => (
-			Rc::new(|stack: &mut Box<dyn TowerStack>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), RuntimeError> {
-				let string = stack.pop_strptr()?;
-				println!("{string}");
+// pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
+// 	im::hashmap! {
+// 		"println_str".into() => (
+// 			Rc::new(|stack: &mut Box<dyn TowerStack>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), RuntimeError> {
+// 				let string = stack.pop_strptr()?;
+// 				println!("{string}");
 
-				Ok(())
-			}) as Instruction,
-			StackEffect::new_popped(im::vector![TowerType::StrPtr])
-		),
-		"call".into() => (
-			Rc::new(|stack: &mut Box<dyn TowerStack>, symbols: &HashMap<String, AnnotatedASTNode>| -> Result<(), RuntimeError> {
-				let string = stack.pop_fnptr()?;
-				exec_fn(stack, symbols, &string)?;
+// 				Ok(())
+// 			}) as Instruction,
+// 			StackEffect::new_popped(im::vector![TowerType::StrPtr])
+// 		),
+// 		"call".into() => (
+// 			Rc::new(|stack: &mut Box<dyn TowerStack>, symbols: &HashMap<String, AnnotatedASTNode>| -> Result<(), RuntimeError> {
+// 				let string = stack.pop_fnptr()?;
+// 				exec_fn(stack, symbols, &string)?;
 
-				Ok(())
-			}) as Instruction,
-			StackEffect::new_popped(im::vector![TowerType::FnPtr])
-		),
-		"dup_str".into() => (
-			Rc::new(|stack: &mut Box<dyn TowerStack>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), RuntimeError> {
-				let string = stack.pop_strptr()?;
-				stack.push_strptr(string.clone())?;
-				stack.push_strptr(string)?;
+// 				Ok(())
+// 			}) as Instruction,
+// 			StackEffect::new_popped(im::vector![TowerType::FnPtr])
+// 		),
+// 		"dup_str".into() => (
+// 			Rc::new(|stack: &mut Box<dyn TowerStack>, _: &HashMap<String, AnnotatedASTNode>| -> Result<(), RuntimeError> {
+// 				let string = stack.pop_strptr()?;
+// 				stack.push_strptr(string.clone())?;
+// 				stack.push_strptr(string)?;
 
-				Ok(())
-			}) as Instruction,
-			StackEffect::new(im::vector![TowerType::StrPtr], im::vector![TowerType::StrPtr, TowerType::StrPtr])
-		),
-		"if".into() => (
-			Rc::new(|stack: &mut Box<dyn TowerStack>, symbols: &HashMap<String, AnnotatedASTNode>| -> Result<(), RuntimeError> {
-				let fnptr = stack.pop_fnptr()?;
-				let cond = stack.pop_bool()?;
-				if cond {
-					exec_fn(stack, symbols, &fnptr)?;
-				}
+// 				Ok(())
+// 			}) as Instruction,
+// 			StackEffect::new(im::vector![TowerType::StrPtr], im::vector![TowerType::StrPtr, TowerType::StrPtr])
+// 		),
+// 		"if".into() => (
+// 			Rc::new(|stack: &mut Box<dyn TowerStack>, symbols: &HashMap<String, AnnotatedASTNode>| -> Result<(), RuntimeError> {
+// 				let fnptr = stack.pop_fnptr()?;
+// 				let cond = stack.pop_bool()?;
+// 				if cond {
+// 					exec_fn(stack, symbols, &fnptr)?;
+// 				}
 
-				Ok(())
-			}) as Instruction,
-			StackEffect::new_popped(im::vector![TowerType::FnPtr])
-		)
-	}
+// 				Ok(())
+// 			}) as Instruction,
+// 			StackEffect::new_popped(im::vector![TowerType::FnPtr])
+// 		)
+// 	}
 
 	// im::hashmap! {
 	// 	"print".into() => (
@@ -217,4 +217,4 @@ pub fn instructions() -> im::HashMap<String, (Instruction, StackEffect)> {
 	// 		StackEffect::new(im::vector![TowerType::Generic("A".into()), TowerType::Generic("A".into())], im::vector![TowerType::Generic("B".into())])
 	// 	)
 	// }
-}
+// }

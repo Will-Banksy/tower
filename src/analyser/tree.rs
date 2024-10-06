@@ -1,13 +1,17 @@
+use super::{stack_effect::StackEffect, ttype::Type, value::Value};
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypedTreeNode {
-	file_path: String,
-	cursor: usize,
-	tree: TypedTree
+	pub file_path: String,
+	pub cursor: usize,
+	pub tree: TypedTree
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum TypedTree {
 	Module {
 		name: String,
-		elems: im::Vector<TypedTreeNode>
+		elems: im::HashMap<String, TypedTreeNode>
 	},
 	Function {
 		name: String,
@@ -19,5 +23,15 @@ pub enum TypedTree {
 	Literal {
 		ty: Type,
 		value: Value
+	}
+}
+
+impl TypedTree {
+	pub fn wrap(self, file_path: impl Into<String>, cursor: usize) -> TypedTreeNode {
+		TypedTreeNode {
+			file_path: file_path.into(),
+			cursor,
+			tree: self
+		}
 	}
 }
