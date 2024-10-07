@@ -1,12 +1,10 @@
 # tower
 
-A simplistic stack-based programming language inspired by Factor with a compiler or interpreter (haven't decided yet) written in ~~LLVM IR~~ Rust.
-
-Why not LLVM IR anymore? Cause I feel I've got what I wanted from writing it, and it was just tedious from there - additionally, I started caring about the result of the project. I made more progress in Rust in a few hours than I did in LLVM IR in a few days.
+A simplistic stack-based programming language inspired by Factor with a compiler or interpreter (haven't decided yet) written in Rust.
 
 Extremely WIP, the lexer has not been finished yet, and the language design isn't fully decided upon either. This README serves as its documentation and discussion.
 
-TODO: Update this README - It's out of date with the current state of the language. In particular, the new parser and defined grammar does not yet support some features, functions have different syntax, and with the analyser work, generics have been disabled cause they weren't implemented properly
+<!-- TODO: Update this README - It's out of date with the current state of the language. I started rewriting it a bit but haven't finished (up to Comments) -->
 
 ## Concepts
 
@@ -15,15 +13,25 @@ In tower, all operations operate on a stack of values that is shared throughout 
 Functions do not have parameters, since they operate directly on the stack, and so any arguments you want to pass to a function have to be pushed onto the stack.
 This does mean that the responsibility of ensuring functions are provided all required arguments falls upon the programmer.
 
-Currently being worked on though is a system of checking *stack effects*, where the exact inputs and outputs of every function are checked to make sure they are correct, much like type checking in most languages - this really requires generics and as a dependency of that, traits/interfaces, which are also planned. Further along, a method of type erasure will be made where the constraints of the stack effect checking is too restrictive.
+Currently being worked on though is a system of checking *stack effects*, where the exact inputs and outputs of every function are checked to make sure they are correct, much like type checking in most languages - this really requires a proper type system, which is being developed.
 
 ## Syntax
 
-Top level tower code is currently composed entirely of comments and the arguably more exciting function declarations. Since all functions operate on a stack rather than taking arguments and returning values, tower code is essentially just postfix notation.
+Top level tower code is currently composed of comments, function declarations, and struct/enum definitions. Since all functions operate on a stack rather than taking arguments and returning values, tower code is essentially just postfix notation.
 
-UTF-8 is fully supported, so that identifiers can be constructed out of *any* unicode characters except whitespace, or in ways that would identify it as another token type such as a numeric literal. E.g. `fn ✨ = "sparkle" println ;` is valid but `fn "sparkle" = "✨" println ;` is not.
+UTF-8 is fully supported, so that identifiers can be constructed using the same unicode characters as are allowed in Rust. E.g. `fn ✨ = "sparkle" println ;` is valid but `fn "sparkle" = "✨" println ;` is not.
 
-Of note is that right now, all tokens are whitespace delimited. E.g. `fn main = 1 println ;` is valid but `fn main=1 println;` is not - `main=1` will be parsed as a single identifier, as will `println;` and due to the lack of the `=` and `;` tokens the function declaration will not make it through parsing.
+Whitespace is necessary in many places, such as between `fn` and the function name, but currently all unicode whitespace is allowed and treated equally. So,
+```
+fn foo {}
+```
+and
+```
+fn
+foo                         {
+	}
+```
+are interpreted as the same.
 
 ### Comments
 
@@ -31,7 +39,7 @@ Comments begin with `#`, and end at the end of the line, bash style. This also a
 
 ### (Named) Functions
 
-Function declarations take the form `fn function_name =` followed by the function body, and terminated with a `;`.
+Function declarations take the form `fn function_name {` followed by the function body, and terminated with a matching `}`.
 
 The function body is a list of literals, words (function calls), and keywords. Literals are like an instruction to push a value on to the stack - E.g. `fn hello = "hello" ;` is a function that simply pushes "hello" onto the stack and then returns. Words are simply the name of a function, which when execution reaches it that function is called - E.g. `fn hello = print_hello ;` is a function that simply calls the `print_hello` function then returns. The only keywords that can appear in a function body are the `{` `}` keywords, denoting the start and end of an anonymous function.
 
