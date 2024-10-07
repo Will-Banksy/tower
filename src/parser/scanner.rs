@@ -27,15 +27,15 @@ impl<'a> Scanner<'a> { // TODO: Introduce a better naming scheme, with separatio
 	}
 
 	/// Returns the line pointed to by the cursor
-	pub fn get_context(&self, cursor: usize) -> &'a str { // BUG: Bugs with char boundaries - multi-byte characters can cause issues - Perhaps operate in terms of characters
+	pub fn get_context(&self, cursor: usize) -> String {
 		// Find the previous newline
-		let start = self.content[0..cursor].rfind(|c| c == '\n').map(|i| i + 1).unwrap_or(0);
+		let start = self.content_chars[0..cursor].iter().rposition(|&c| c == '\n').map(|i| i + 1).unwrap_or(0);
 
 		// Find the next newline or carriage return (as that comes before newline on windows)
-		let end = cursor + self.content[cursor..].find(|c| c == '\n' || c == '\r').unwrap_or(self.content.len() - cursor);
+		let end = cursor + self.content_chars[cursor..].iter().position(|&c| c == '\n' || c == '\r').unwrap_or(self.content_chars.len() - cursor);
 
-		// The reason I operated on bytes rather than chars in this method is cause I can't slice with char indices
-		&self.content[start..end]
+		// Sadly a slice of chars is not the same as a string slice (chars are always 32-bit)
+		self.content_chars[start..end].iter().collect::<String>()
 	}
 
 	pub fn get_col_row(&self, cursor: usize) -> (usize, usize) {

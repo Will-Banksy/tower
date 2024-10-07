@@ -144,7 +144,7 @@ impl Display for TowerType {
 
 /// Walk recursively through the AST, starting at node, calculating stack effects.
 // BUG: Cannot handle recursive patterns, i.e. a function calling itself
-// pub fn calc_stack_effects(tles: &HashMap<String, AnnotatedASTNode>, node: &AnnotatedASTNode, effects: &mut HashMap<NodeId, StackEffect>) -> Result<StackEffect, String> {
+// pub fn calc_stack_effects(tles: &OrdMap<String, AnnotatedASTNode>, node: &AnnotatedASTNode, effects: &mut OrdMap<NodeId, StackEffect>) -> Result<StackEffect, String> {
 // 	if let Some(effect) = effects.get(&node.id) {
 // 		return Ok(effect.clone());
 // 	}
@@ -214,10 +214,10 @@ fn literal_effect(lit: &Literal) -> StackEffect {
 	}
 }
 
-fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::HashMap<String, TypedTreeNode>, parse_tree_tles: &im::HashMap<String, ParseTreeNode>) -> AnalysisResult<TypedTreeNode> {
+fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, TypedTreeNode>, parse_tree_tles: &im::OrdMap<String, ParseTreeNode>) -> AnalysisResult<TypedTreeNode> {
 	let tree = match &parse_tree.tree {
 		ParseTree::Module { name, elems } => {
-			let mut typed_elems = im::HashMap::new();
+			let mut typed_elems = im::OrdMap::new();
 			let mut to_analyse: Vec<(&String, &ParseTreeNode)> = elems.into_iter().collect();
 
 			// FIXME: Will currently infinitely loop where there are recursive functions. Check if any functions have been resolved after each iteration and if not then error
@@ -270,6 +270,34 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::HashMap<String, Typ
 						ident_effect.clone()
 					},
 					ParseTree::Literal(lit) => literal_effect(lit),
+					ParseTree::Constructor(ident) => { // FIXME: Code duplication - this and the outer match ParseTree::Constructor case
+						let ctype = {
+							if let Some(ty) = Type::from_name(ident) {
+								ty
+							} else {
+								if let Some(type_node) = tles.get(ident) {
+									match &type_node.tree {
+										TypedTree::Type(ty) => ty.clone(),
+										_ => unreachable!()
+									}
+								} else if parse_tree_tles.contains_key(ident) {
+									// If we don't know the type of a used type name (but it exists), return Unrecognised to skip evaluating this type for now
+									return Unrecognised;
+								} else {
+									return WithErr(SyntaxError::new(SyntaxErrorKind::NoSuchType { tname: ident.to_string() }, ParseTreeType::None, 0))
+								}
+							}
+						};
+
+						let effect = match &ctype {
+							Type::Transparent { name: _, fields, sum_type } => { // TODO: Handle sum types (enums)
+								StackEffect::new_constructor(ctype.clone(), fields)
+							}
+							_ => return WithErr(SyntaxError::new(SyntaxErrorKind::UnconstructableType { tname: ctype.name() }, ParseTreeType::None, 0))
+						};
+
+						effect
+					}
 					_ => unreachable!()
 				};
 
@@ -284,7 +312,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::HashMap<String, Typ
 			TypedTree::Function { name: name.to_string(), effect, body: typed_body }
 		},
 		ParseTree::Struct { name, fields } => {
-			let mut typed_fields = im::HashMap::new();
+			let mut typed_fields = im::OrdMap::new();
 
 			for (fname, ftype) in fields {
 				let typed_ftype = {
@@ -313,6 +341,34 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::HashMap<String, Typ
 		ParseTree::Enum { name, fields } => todo!(),
 		ParseTree::Identifier(s) => TypedTree::Word(s.to_string()),
 		ParseTree::Literal(literal) => TypedTree::Literal { ty: Type::from_lit(literal), value: Value::from_lit(literal) },
+		ParseTree::Constructor(ident) => {
+			let ctype = {
+				if let Some(ty) = Type::from_name(ident) {
+					ty
+				} else {
+					if let Some(type_node) = tles.get(ident) {
+						match &type_node.tree {
+							TypedTree::Type(ty) => ty.clone(),
+							_ => unreachable!()
+						}
+					} else if parse_tree_tles.contains_key(ident) {
+						// If we don't know the type of a used type name (but it exists), return Unrecognised to skip evaluating this type for now
+						return Unrecognised;
+					} else {
+						return WithErr(SyntaxError::new(SyntaxErrorKind::NoSuchType { tname: ident.to_string() }, ParseTreeType::None, 0))
+					}
+				}
+			};
+
+			let effect = match &ctype {
+				Type::Transparent { name: _, fields, sum_type } => { // TODO: Handle sum types (enums)
+					StackEffect::new_constructor(ctype.clone(), fields)
+				}
+				_ => return WithErr(SyntaxError::new(SyntaxErrorKind::UnconstructableType { tname: ctype.name() }, ParseTreeType::None, 0))
+			};
+
+			TypedTree::Constructor { ty: ctype, effect }
+		}
 	};
 
 	Valid(
@@ -325,13 +381,13 @@ pub fn analyse(parse_tree: &ParseTreeNode) -> AnalysisResult<TypedTreeNode> {
 	// TODO: ALSO need to do monomorphisation and figure out generics
 	// TODO: ALSO need to assign paths to all the relevant things i.e. module::Trait::function, module::function, module::module::module::Struct
 
-	let typed_tree = calc_stack_effects(parse_tree, &im::HashMap::new(), &im::HashMap::new());
+	let typed_tree = calc_stack_effects(parse_tree, &im::OrdMap::new(), &im::OrdMap::new());
 
 	typed_tree
 }
 
-// fn add_instructions(program: &mut HashMap<String, AnnotatedASTNode>, effects: &mut HashMap<NodeId, StackEffect>, node_id: &mut NodeId) {
-// 	let instructions: im::HashMap<String, (Instruction, StackEffect)> = instructions();
+// fn add_instructions(program: &mut OrdMap<String, AnnotatedASTNode>, effects: &mut OrdMap<NodeId, StackEffect>, node_id: &mut NodeId) {
+// 	let instructions: im::OrdMap<String, (Instruction, StackEffect)> = instructions();
 
 // 	for (instruct_name, (instruct_body, instruct_effect)) in instructions {
 // 		program.insert(instruct_name.to_string(), AnnotatedASTNode::new(ASTNode::Instruction(instruct_body), node_id.inc()));

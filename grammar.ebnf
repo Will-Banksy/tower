@@ -37,7 +37,7 @@ function = "fn" s+ identifier s* block ;
 structure = "struct" s+ identifier s* '{' ( s* identifier s* ':' ( identifier ) )* s* '}' ;
 
 (* // NOTE: Add necessary spaceing between items in a block? E.g. currently "this"isvalid as a string literal and identifier *)
-block = "{" ( s* ( identifier | literal ) )* s* "}" ;
+block = "{" ( s* ( identifier | literal | constructor | field_access ) )* s* "}" ;
 
 (* Same definition of identifiers that Rust uses - derived from unicode rules for identifiers *)
 identifier = ( XID_START | "_" ) XID_CONTINUE* ;
@@ -49,10 +49,16 @@ literal_string = '"' ( ( '\' ( '\' | 'n' | 't' | 'r' | '0' | '"' | ( 'x' NUM_HEX
 literal_integer = "-"? ( "0b" NUM_BIN+ ) | ( "0x" NUM_HEX+ ) | ( "0o" NUM_OCT+ ) | ( NUM+ ) ( ( "u" | "i" ) ("128" | "64" | "32" | "16" | "8" )? )? ;
 
 literal_float = "-"? NUM+ ( "." NUM* )? ( ( "e" | "E" ) "-"? NUM+ ) ;
-(*
-literal_struct = identifier s* '{' s* ( identifier )* s* '}' ;
 
+constructor = constructor_struct ;
+
+constructor_struct = "->" s+ identifier ;
+
+field_access = "." identifier ; (* // TODO: Implement this now *)
+
+(*
 literal_enum = identifier '::' ( identifier | literal_struct ) ;
 *)
+
 (* // TODO: Decide whether to go for all unicode whitespace characters or just the usual ones *)
 s = WHITESPACE ;

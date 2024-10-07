@@ -12,7 +12,7 @@ pub enum Type {
 	},
 	Transparent {
 		name: String,
-		fields: im::HashMap<String, Type>,
+		fields: im::OrdMap<String, Type>,
 		/// Whether this type is a sum type/enum (true) or product type/struct (false)
 		sum_type: bool,
 	},
@@ -59,11 +59,11 @@ impl Type {
 		Type::Reference { to: Box::new(Type::new_str(len_bytes)) }
 	}
 
-	pub fn new_struct(name: String, fields: &im::HashMap<String, Type>) -> Type {
+	pub fn new_struct(name: String, fields: &im::OrdMap<String, Type>) -> Type {
 		Type::Transparent { name, fields: fields.clone(), sum_type: false }
 	}
 
-	pub fn new_enum(name: String, fields: &im::HashMap<String, Type>) -> Type {
+	pub fn new_enum(name: String, fields: &im::OrdMap<String, Type>) -> Type {
 		Type::Transparent { name, fields: fields.clone(), sum_type: true }
 	}
 

@@ -84,6 +84,9 @@ impl Display for SyntaxError {
 			SyntaxErrorKind::NoSuchType { tname } => {
 				write!(f, "while parsing {:?}, type {tname} was not found in scope", self.while_parsing)
 			}
+			SyntaxErrorKind::UnconstructableType { tname } => {
+				write!(f, "while parsing {:?}, type {tname} cannot be constructed (is not a struct or enum variant)", self.while_parsing)
+			}
 		}
 	}
 }
@@ -113,6 +116,9 @@ pub enum SyntaxErrorKind {
 		fname: String,
 	},
 	NoSuchType {
+		tname: String,
+	},
+	UnconstructableType {
 		tname: String,
 	}
 }

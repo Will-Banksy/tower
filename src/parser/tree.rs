@@ -6,7 +6,8 @@ pub enum ParseTreeType {
 	Struct,
 	Enum,
 	Identifier,
-	Literal
+	Literal,
+	Constructor
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -20,7 +21,7 @@ pub struct ParseTreeNode {
 pub enum ParseTree {
 	Module {
 		name: String,
-		elems: im::HashMap<String, ParseTreeNode>
+		elems: im::OrdMap<String, ParseTreeNode>
 	},
 	Function {
 		name: String,
@@ -28,14 +29,15 @@ pub enum ParseTree {
 	},
 	Struct {
 		name: String,
-		fields: im::HashMap<String, String>
+		fields: im::OrdMap<String, String>
 	},
 	Enum {
 		name: String,
-		fields: im::HashMap<String, String>
+		fields: im::OrdMap<String, String>
 	},
 	Identifier(String),
 	Literal(Literal),
+	Constructor(String)
 }
 
 impl ParseTree {

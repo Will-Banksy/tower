@@ -26,7 +26,8 @@ pub enum TokenType { // TODO: Evaluate these, and ideally have these represented
 	Quote,
 	EscapeSequence,
 	Block,
-	Colon
+	Colon,
+	ConstructorArrow
 }
 
 pub fn parse(scanner: &mut Scanner) -> ParseResult<ParseTreeNode> {
@@ -152,7 +153,7 @@ fn structure(scanner: &mut Scanner) -> ParseResult<(String, ParseTree)> {
 
 	brk!(ParseResult::from(scanner.take('}')).require(SyntaxError::expected(vec![TokenType::RCurlyParen], ParseTreeType::Struct, scanner.cursor())));
 
-	let fields: im::HashMap<String, String> = fields.into_iter().collect();
+	let fields: im::OrdMap<String, String> = fields.into_iter().collect();
 
 	eprintln!("struct end");
 
@@ -175,7 +176,8 @@ fn block(scanner: &mut Scanner) -> ParseResult<im::Vector<ParseTreeNode>> {
 
 		let ret = brk!(scanner.take_choice(vec![
 			Box::new(identifier),
-			Box::new(literal)
+			Box::new(literal),
+			Box::new(constructor_struct)
 		]));
 
 		scanner.take_any(s);
@@ -221,7 +223,7 @@ fn literal(scanner: &mut Scanner) -> ParseResult<ParseTree> {
 	let ret = brk!(scanner.take_choice(vec![
 		Box::new(literal_string),
 		Box::new(literal_integer),
-		Box::new(literal_float)
+		Box::new(literal_float),
 	]).map(|lit| ParseTree::Literal(lit)));
 
 	eprintln!("literal end");
@@ -458,6 +460,19 @@ fn literal_integer_radix(scanner: &mut Scanner, radix: u8) -> ParseResult<u128> 
 /// Returns a Literal
 fn literal_float(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
 	Unrecognised
+}
+
+fn constructor_struct(scanner: &mut Scanner) -> ParseResult<ParseTree> {
+	brk!(scanner.take_str("->").into());
+
+	brk!(ParseResult::from(scanner.take_some(s)).require(SyntaxError::expected(vec![TokenType::Whitespace], ParseTreeType::Constructor, scanner.cursor())));
+
+	let ident = match brk!(identifier(scanner).require(SyntaxError::expected(vec![TokenType::Identifier], ParseTreeType::Constructor, scanner.cursor()))) {
+		ParseTree::Identifier(s) => s,
+		_ => unreachable!()
+	};
+
+	Valid(ParseTree::Constructor(ident))
 }
 
 fn s(scanner: &mut Scanner) -> ParseResult<()> {

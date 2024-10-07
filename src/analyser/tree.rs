@@ -11,7 +11,7 @@ pub struct TypedTreeNode {
 pub enum TypedTree {
 	Module {
 		name: String,
-		elems: im::HashMap<String, TypedTreeNode>
+		elems: im::OrdMap<String, TypedTreeNode>
 	},
 	Function {
 		name: String,
@@ -23,6 +23,10 @@ pub enum TypedTree {
 	Literal {
 		ty: Type,
 		value: Value
+	},
+	Constructor {
+		ty: Type,
+		effect: StackEffect
 	}
 }
 

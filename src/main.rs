@@ -61,7 +61,7 @@ fn main() {
 	// }
 }
 
-fn dump_parse_tree(tree: &ParseTreeNode, depth: u32) -> String { // TODO: Refactor to actually use the depth for printing (it's a mess rn)
+fn dump_parse_tree(tree: &ParseTreeNode, depth: u32) -> String { // TODO: depth is not used - Use it or remove it
 	match &tree.tree {
 		ParseTree::Module { name, elems } => format!("Module(name: {name}, elems: [\n{}])", elems.iter().map(|(elem_name, elem)| format!("\t{elem_name}: {},\n", dump_parse_tree(elem, depth + 1))).collect::<String>()),
 		ParseTree::Function { name, body } => format!("Function(name: {name}, body: [\n{}\t])", body.iter().map(|node| format!("\t\t{},\n", dump_parse_tree(node, depth + 1))).collect::<String>()),
@@ -69,6 +69,7 @@ fn dump_parse_tree(tree: &ParseTreeNode, depth: u32) -> String { // TODO: Refact
 		ParseTree::Identifier(word) => format!("Identifier({word})"),
 		ParseTree::Struct { name, fields } => format!("Struct(name: {name}, fields: [\n{}\t])", fields.iter().map(|(fname, ftype)| format!("\t\t{fname}: {ftype},\n")).collect::<String>()),
 		ParseTree::Enum { name, fields } => format!("Struct(name: {name}, [\n{}\t])", fields.iter().map(|(fname, ftype)| format!("\t\t{fname} {ftype},\n")).collect::<String>()),
+		ParseTree::Constructor(ty) => format!("Constructor(of: {ty})")
 	}
 }
 
@@ -79,6 +80,7 @@ fn dump_typed_tree(tree: &TypedTreeNode, depth: u32) -> String {
 		TypedTree::Type(ty) => format!("Type({ty})"),
 		TypedTree::Word(word) => format!("Word({word})"),
 		TypedTree::Literal { ty, value } => format!("Literal(type: {ty}, value: (unable to be displayed))"),
+		TypedTree::Constructor { ty, effect } => format!("Constructor(of: {ty}, effect: {effect})"),
 	}
 }
 

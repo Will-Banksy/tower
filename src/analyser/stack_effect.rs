@@ -27,6 +27,16 @@ impl StackEffect {
 		StackEffect { popped: im::Vector::new(), pushed: im::Vector::new() }
 	}
 
+	pub fn new_constructor(of: Type, fields: &im::OrdMap<String, Type>) -> StackEffect {
+		let mut popped = im::Vector::new();
+
+		for (_, ftype) in fields {
+			popped.push_back(ftype.clone());
+		}
+
+		StackEffect::new(popped, im::vector![of])
+	}
+
 	// TODO: Turn this shit into something usable with the new way of doing things
 	//       Essentially, this will help craft the type system
 	//       I think we need context however - Whether a type can "become" a generic type is dependent on the required functions to be defined
