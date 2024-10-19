@@ -9,8 +9,6 @@ pub mod interpreter;
 pub mod instructions;
 /// Contains extension method for operating on a Vec<u8> as the program stack
 pub mod stack;
-/// Contains error types
-pub mod error;
 
 /// Acts like the ? operator on ScanResults - Returns early on WithErr and Unrecognised
 #[macro_export]

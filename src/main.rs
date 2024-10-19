@@ -1,4 +1,4 @@
-use tower::{analyser::{self, analyse, tree::{TypedTree, TypedTreeNode}}, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}, stack::TowerStack};
+use tower::{analyser::{self, tree::{TypedTree, TypedTreeNode}}, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}};
 
 fn main() {
 	let towercode = include_str!("../main.tower");
@@ -69,7 +69,8 @@ fn dump_parse_tree(tree: &ParseTreeNode, depth: u32) -> String { // TODO: depth 
 		ParseTree::Identifier(word) => format!("Identifier({word})"),
 		ParseTree::Struct { name, fields } => format!("Struct(name: {name}, fields: [\n{}\t])", fields.iter().map(|(fname, ftype)| format!("\t\t{fname}: {ftype},\n")).collect::<String>()),
 		ParseTree::Enum { name, fields } => format!("Struct(name: {name}, [\n{}\t])", fields.iter().map(|(fname, ftype)| format!("\t\t{fname} {ftype},\n")).collect::<String>()),
-		ParseTree::Constructor(ty) => format!("Constructor(of: {ty})")
+		ParseTree::Constructor(ty) => format!("Constructor(of: {ty})"),
+		ParseTree::FieldAccess(ident) => format!("FieldAccess(field: {ident})")
 	}
 }
 
@@ -81,6 +82,7 @@ fn dump_typed_tree(tree: &TypedTreeNode, depth: u32) -> String {
 		TypedTree::Word(word) => format!("Word({word})"),
 		TypedTree::Literal { ty, value } => format!("Literal(type: {ty}, value: (unable to be displayed))"),
 		TypedTree::Constructor { ty, effect } => format!("Constructor(of: {ty}, effect: {effect})"),
+		TypedTree::FieldAccess { name, effect } => format!("FieldAccess(field: {name}, effect: {effect}")
 	}
 }
 

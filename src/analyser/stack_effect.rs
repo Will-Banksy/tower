@@ -1,8 +1,8 @@
 use std::fmt::{Display, Write};
 
-use crate::{error::{SyntaxError, SyntaxErrorKind}, parser::tree::ParseTreeType};
+use crate::parser::{tree::ParseTreeType, error::{SyntaxError, SyntaxErrorKind}};
 
-use super::ttype::Type;
+use super::{error::{AnalysisError, AnalysisErrorKind}, ttype::Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StackEffect {
@@ -40,7 +40,7 @@ impl StackEffect {
 	// TODO: Turn this shit into something usable with the new way of doing things
 	//       Essentially, this will help craft the type system
 	//       I think we need context however - Whether a type can "become" a generic type is dependent on the required functions to be defined
-	pub fn combine(mut self, next: &StackEffect) -> Result<StackEffect, SyntaxError> {
+	pub fn combine(mut self, next: &StackEffect) -> Result<StackEffect, AnalysisError> {
 		let mut next = next.clone();
 		while self.pushed.len() > 0 && next.popped.len() > 0 {
 			let pushed = self.pushed.pop_back().unwrap();
@@ -59,7 +59,7 @@ impl StackEffect {
 
 				todo!()
 			} else {
-				return Err(SyntaxError::new(SyntaxErrorKind::IncompatibleTypes { source: pushed, dest: popped }, ParseTreeType::None, 0))
+				return Err(AnalysisError::new(AnalysisErrorKind::IncompatibleTypes { source: pushed, dest: popped }, 0))
 			}
 		}
 

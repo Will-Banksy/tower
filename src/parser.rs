@@ -1,15 +1,17 @@
 pub mod scanner;
 pub mod result;
 pub mod tree;
+pub mod error;
 
 use std::num::IntErrorKind;
 
+use error::{SyntaxError, SyntaxErrorKind};
 use result::ScanResult::{self, Valid, WithErr, Unrecognised};
 use scanner::Scanner;
 use tree::{ParseTree, ParseTreeNode, ParseTreeType, Literal};
 use unicode_xid::UnicodeXID;
 
-use crate::{analyser::TowerType, brk, error::{SyntaxError, SyntaxErrorKind}};
+use crate::{analyser::TowerType, brk};
 
 type ParseResult<T> = ScanResult<T, SyntaxError>;// Option<Result<T, SyntaxError>>;
 
@@ -177,7 +179,8 @@ fn block(scanner: &mut Scanner) -> ParseResult<im::Vector<ParseTreeNode>> {
 		let ret = brk!(scanner.take_choice(vec![
 			Box::new(identifier),
 			Box::new(literal),
-			Box::new(constructor_struct)
+			Box::new(constructor_struct),
+			Box::new(field_access)
 		]));
 
 		scanner.take_any(s);
@@ -473,6 +476,17 @@ fn constructor_struct(scanner: &mut Scanner) -> ParseResult<ParseTree> {
 	};
 
 	Valid(ParseTree::Constructor(ident))
+}
+
+fn field_access(scanner: &mut Scanner) -> ParseResult<ParseTree> {
+	brk!(scanner.take('.').into());
+
+	let ident = match brk!(identifier(scanner).require(SyntaxError::expected(vec![TokenType::Identifier], ParseTreeType::FieldAccess, scanner.cursor()))) {
+		ParseTree::Identifier(s) => s,
+		_ => unreachable!()
+	};
+
+	Valid(ParseTree::FieldAccess(ident))
 }
 
 fn s(scanner: &mut Scanner) -> ParseResult<()> {

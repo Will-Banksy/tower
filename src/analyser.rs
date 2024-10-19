@@ -2,16 +2,19 @@ pub mod tree;
 pub mod stack_effect;
 pub mod ttype;
 pub mod value;
+pub mod error;
 
-use std::fmt::{Display, Write};
+use std::fmt::Display;
 
+use error::{AnalysisError, AnalysisErrorKind};
 use stack_effect::StackEffect;
 use tree::{TypedTree, TypedTreeNode};
 use ttype::Type;
 use value::Value;
 
-use crate::{brk, error::{SyntaxError, SyntaxErrorKind}, parser::{result::ScanResult::{self, Unrecognised, Valid, WithErr}, tree::{Literal, ParseTree, ParseTreeNode, ParseTreeType}}};
+use crate::{brk, parser::{result::ScanResult::{self, Unrecognised, Valid, WithErr}, tree::{Literal, ParseTree, ParseTreeNode, ParseTreeType}}};
 
+// NOTE: I don't like this
 #[derive(PartialEq, Clone, Debug)]
 pub enum TowerType {
 	U128,
@@ -192,7 +195,7 @@ impl Display for TowerType {
 // 	Ok(effect)
 // }
 
-type AnalysisResult<T> = ScanResult<T, SyntaxError>; // FIXME: Use new error type
+type AnalysisResult<T> = ScanResult<T, AnalysisError>; // FIXME: Use new error type
 
 fn literal_effect(lit: &Literal) -> StackEffect {
 	match lit {
@@ -258,12 +261,12 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 							return Unrecognised;
 						} else {
 							// If that function doesn't exist, however, we error
-							return WithErr(SyntaxError::new(SyntaxErrorKind::NoSuchFunction { fname: ident.to_string() }, ParseTreeType::None, 0));
+							return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: ident.to_string() }, 0));
 						};
 
 						let ident_effect = match &func_node.tree {
 							TypedTree::Function { effect, .. } => effect,
-							TypedTree::Type(ty) => return WithErr(SyntaxError::new(SyntaxErrorKind::TypeIsNotFunction { tname: ty.name() }, ParseTreeType::None, 0)),
+							TypedTree::Type(ty) => return WithErr(AnalysisError::new(AnalysisErrorKind::TypeIsNotFunction { tname: ty.name() }, 0)),
 							_ => unreachable!()
 						};
 
@@ -284,7 +287,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 									// If we don't know the type of a used type name (but it exists), return Unrecognised to skip evaluating this type for now
 									return Unrecognised;
 								} else {
-									return WithErr(SyntaxError::new(SyntaxErrorKind::NoSuchType { tname: ident.to_string() }, ParseTreeType::None, 0))
+									return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchType { tname: ident.to_string() }, 0))
 								}
 							}
 						};
@@ -293,12 +296,12 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 							Type::Transparent { name: _, fields, sum_type } => { // TODO: Handle sum types (enums)
 								StackEffect::new_constructor(ctype.clone(), fields)
 							}
-							_ => return WithErr(SyntaxError::new(SyntaxErrorKind::UnconstructableType { tname: ctype.name() }, ParseTreeType::None, 0))
+							_ => return WithErr(AnalysisError::new(AnalysisErrorKind::UnconstructableType { tname: ctype.name() }, 0))
 						};
 
 						effect
 					}
-					_ => unreachable!()
+					_ => unreachable!() // FIXME: Not unreachable anymore
 				};
 
 				typed_body.push_back(brk!(calc_stack_effects(elem, tles, parse_tree_tles)));
@@ -328,7 +331,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 							// If we don't know the type of a used type name (but it exists), return Unrecognised to skip evaluating this type for now
 							return Unrecognised;
 						} else {
-							return WithErr(SyntaxError::new(SyntaxErrorKind::NoSuchType { tname: ftype.to_string() }, ParseTreeType::None, 0))
+							return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchType { tname: ftype.to_string() }, 0))
 						}
 					}
 				};
@@ -338,7 +341,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 
 			TypedTree::Type(Type::new_struct(name.to_string(), &typed_fields))
 		},
-		ParseTree::Enum { name, fields } => todo!(),
+		ParseTree::Enum { name, fields } => todo!(), // TODO
 		ParseTree::Identifier(s) => TypedTree::Word(s.to_string()),
 		ParseTree::Literal(literal) => TypedTree::Literal { ty: Type::from_lit(literal), value: Value::from_lit(literal) },
 		ParseTree::Constructor(ident) => {
@@ -355,7 +358,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 						// If we don't know the type of a used type name (but it exists), return Unrecognised to skip evaluating this type for now
 						return Unrecognised;
 					} else {
-						return WithErr(SyntaxError::new(SyntaxErrorKind::NoSuchType { tname: ident.to_string() }, ParseTreeType::None, 0))
+						return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchType { tname: ident.to_string() }, 0))
 					}
 				}
 			};
@@ -364,11 +367,12 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 				Type::Transparent { name: _, fields, sum_type } => { // TODO: Handle sum types (enums)
 					StackEffect::new_constructor(ctype.clone(), fields)
 				}
-				_ => return WithErr(SyntaxError::new(SyntaxErrorKind::UnconstructableType { tname: ctype.name() }, ParseTreeType::None, 0))
+				_ => return WithErr(AnalysisError::new(AnalysisErrorKind::UnconstructableType { tname: ctype.name() }, 0))
 			};
 
 			TypedTree::Constructor { ty: ctype, effect }
 		}
+		ParseTree::FieldAccess(field_name) => todo!(), // TODO
 	};
 
 	Valid(

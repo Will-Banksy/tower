@@ -27,6 +27,10 @@ pub enum TypedTree {
 	Constructor {
 		ty: Type,
 		effect: StackEffect
+	},
+	FieldAccess {
+		name: String,
+		effect: StackEffect
 	}
 }
 

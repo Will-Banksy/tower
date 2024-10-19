@@ -7,7 +7,8 @@ pub enum ParseTreeType {
 	Enum,
 	Identifier,
 	Literal,
-	Constructor
+	Constructor,
+	FieldAccess
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,7 +38,8 @@ pub enum ParseTree {
 	},
 	Identifier(String),
 	Literal(Literal),
-	Constructor(String)
+	Constructor(String),
+	FieldAccess(String)
 }
 
 impl ParseTree {
