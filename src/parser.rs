@@ -227,6 +227,7 @@ fn literal(scanner: &mut Scanner) -> ParseResult<ParseTree> {
 		Box::new(literal_string),
 		Box::new(literal_integer),
 		Box::new(literal_float),
+		Box::new(literal_fnref)
 	]).map(|lit| ParseTree::Literal(lit)));
 
 	eprintln!("literal end");
@@ -463,6 +464,17 @@ fn literal_integer_radix(scanner: &mut Scanner, radix: u8) -> ParseResult<u128> 
 /// Returns a Literal
 fn literal_float(scanner: &mut Scanner) -> ParseResult<Literal> { // TODO
 	Unrecognised
+}
+
+fn literal_fnref(scanner: &mut Scanner) -> ParseResult<Literal> {
+	brk!(scanner.take('&').into());
+
+	let ident = match brk!(identifier(scanner).require(SyntaxError::expected(vec![TokenType::Identifier], ParseTreeType::Constructor, scanner.cursor()))) {
+		ParseTree::Identifier(s) => s,
+		_ => unreachable!()
+	};
+
+	Valid(Literal::FnPtr(ident))
 }
 
 fn constructor_struct(scanner: &mut Scanner) -> ParseResult<ParseTree> {

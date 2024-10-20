@@ -195,27 +195,7 @@ impl Display for TowerType {
 // 	Ok(effect)
 // }
 
-type AnalysisResult<T> = ScanResult<T, AnalysisError>; // FIXME: Use new error type
-
-fn literal_effect(lit: &Literal) -> StackEffect {
-	match lit {
-		Literal::U128(_) => StackEffect::new_pushed(im::vector![Type::new_uint(128)]),
-		Literal::U64(_) => StackEffect::new_pushed(im::vector![Type::new_uint(64)]),
-		Literal::U32(_) => StackEffect::new_pushed(im::vector![Type::new_uint(32)]),
-		Literal::U16(_) => StackEffect::new_pushed(im::vector![Type::new_uint(16)]),
-		Literal::U8(_) => StackEffect::new_pushed(im::vector![Type::new_uint(8)]),
-		Literal::I128(_) => StackEffect::new_pushed(im::vector![Type::new_int(128)]),
-		Literal::I64(_) => StackEffect::new_pushed(im::vector![Type::new_int(64)]),
-		Literal::I32(_) => StackEffect::new_pushed(im::vector![Type::new_int(32)]),
-		Literal::I16(_) => StackEffect::new_pushed(im::vector![Type::new_int(16)]),
-		Literal::I8(_) => StackEffect::new_pushed(im::vector![Type::new_int(8)]),
-		Literal::F64(_) => todo!(),
-		Literal::F32(_) => todo!(),
-		Literal::Bool(_) => StackEffect::new_pushed(im::vector![Type::new_bool()]),
-		Literal::String(s) => StackEffect::new_pushed(im::vector![Type::new_strref(s.len())]),
-		Literal::FnPtr(_) => todo!(),
-	}
-}
+type AnalysisResult<T> = ScanResult<T, AnalysisError>;
 
 fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, TypedTreeNode>, parse_tree_tles: &im::OrdMap<String, ParseTreeNode>) -> AnalysisResult<TypedTreeNode> {
 	let tree = match &parse_tree.tree {
@@ -261,18 +241,37 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 							return Unrecognised;
 						} else {
 							// If that function doesn't exist, however, we error
-							return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: ident.to_string() }, 0));
+							return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: ident.to_string() }, elem.cursor));
 						};
 
 						let ident_effect = match &func_node.tree {
 							TypedTree::Function { effect, .. } => effect,
-							TypedTree::Type(ty) => return WithErr(AnalysisError::new(AnalysisErrorKind::TypeIsNotFunction { tname: ty.name() }, 0)),
+							TypedTree::Type(ty) => return WithErr(AnalysisError::new(AnalysisErrorKind::TypeIsNotFunction { tname: ty.name() }, elem.cursor)),
 							_ => unreachable!()
 						};
 
 						ident_effect.clone()
 					},
-					ParseTree::Literal(lit) => literal_effect(lit),
+					ParseTree::Literal(literal) => {
+						match literal {
+							Literal::FnPtr(fn_name) => match tles.get(fn_name) {
+								Some(f) => {
+									match &f.tree {
+										TypedTree::Function { name: _, effect, body: _ } => effect.clone(),
+										_ => return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: fn_name.clone() }, parse_tree.cursor))
+									}
+								},
+								None => {
+									if let Some(_) = parse_tree_tles.get(fn_name) {
+										return Unrecognised; // Skip this literal for now until we know the function's stack effect
+									} else {
+										return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: fn_name.clone() }, parse_tree.cursor))
+									}
+								}
+							},
+							_ => StackEffect::from_lit(literal).expect("Expected Value::from_lit to produce value")
+						}
+					},
 					ParseTree::Constructor(ident) => { // FIXME: Code duplication - this and the outer match ParseTree::Constructor case
 						let ctype = {
 							if let Some(ty) = Type::from_name(ident) {
@@ -287,7 +286,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 									// If we don't know the type of a used type name (but it exists), return Unrecognised to skip evaluating this type for now
 									return Unrecognised;
 								} else {
-									return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchType { tname: ident.to_string() }, 0))
+									return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchType { tname: ident.to_string() }, elem.cursor))
 								}
 							}
 						};
@@ -296,12 +295,35 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 							Type::Transparent { name: _, fields, sum_type } => { // TODO: Handle sum types (enums)
 								StackEffect::new_constructor(ctype.clone(), fields)
 							}
-							_ => return WithErr(AnalysisError::new(AnalysisErrorKind::UnconstructableType { tname: ctype.name() }, 0))
+							_ => return WithErr(AnalysisError::new(AnalysisErrorKind::UnconstructableType { tname: ctype.name() }, elem.cursor))
 						};
 
 						effect
 					}
-					_ => unreachable!() // FIXME: Not unreachable anymore
+					ParseTree::FieldAccess(field_name) => {
+						let (struct_ty, field_ty) = if let Some(top_type) = effect.last_pushed() {
+							match top_type {
+								struct_ty @ Type::Transparent { name: _, fields, sum_type } => {
+									if !sum_type {
+										if let Some(field_ty) = fields.get(field_name) {
+											(struct_ty, field_ty)
+										} else {
+											return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchField { ty: struct_ty.clone(), fname: field_name.clone() }, elem.cursor));
+										}
+									} else {
+										return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchField { ty: struct_ty.clone(), fname: field_name.clone() }, elem.cursor));
+									}
+								}
+								ty => return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchField { ty: ty.clone(), fname: field_name.clone() }, elem.cursor))
+							}
+						} else {
+							// TODO: When we have functions with declared stack effects, we can handle this more intelligently
+							return WithErr(AnalysisError::new(AnalysisErrorKind::CannotInferType, elem.cursor))
+						};
+
+						StackEffect::new_field_access(struct_ty.clone(), field_ty.clone())
+					}
+					_ => unreachable!()
 				};
 
 				typed_body.push_back(brk!(calc_stack_effects(elem, tles, parse_tree_tles)));
@@ -343,7 +365,28 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 		},
 		ParseTree::Enum { name, fields } => todo!(), // TODO
 		ParseTree::Identifier(s) => TypedTree::Word(s.to_string()),
-		ParseTree::Literal(literal) => TypedTree::Literal { ty: Type::from_lit(literal), value: Value::from_lit(literal) },
+		ParseTree::Literal(literal) => {
+			let (ty, value) = match literal {
+				Literal::FnPtr(fn_name) => match tles.get(fn_name) {
+					Some(f) => {
+						match &f.tree {
+							TypedTree::Function { name: _, effect, body: _ } => (Type::new_fnref(fn_name.clone(), effect.clone()), Value::new_fn(fn_name.clone(), effect.clone())),
+							_ => return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: fn_name.clone() }, parse_tree.cursor))
+						}
+					},
+					None => {
+						if let Some(_) = parse_tree_tles.get(fn_name) {
+							return Unrecognised; // Skip this literal for now until we know the function's stack effect
+						} else {
+							return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: fn_name.clone() }, parse_tree.cursor))
+						}
+					}
+				},
+				_ => (Type::from_lit(literal).expect("Expected Type::from_lit to produce type"), Value::from_lit(literal).expect("Expected Value::from_lit to produce value"))
+			};
+
+			TypedTree::Literal { ty, value }
+		},
 		ParseTree::Constructor(ident) => {
 			let ctype = {
 				if let Some(ty) = Type::from_name(ident) {
@@ -372,7 +415,9 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 
 			TypedTree::Constructor { ty: ctype, effect }
 		}
-		ParseTree::FieldAccess(field_name) => todo!(), // TODO
+		ParseTree::FieldAccess(field_name) => { // NOTE: We kinda need context to work out what type this field access operates on. Do we even want that at this point?
+			TypedTree::FieldAccess { name: field_name.clone() }
+		},
 	};
 
 	Valid(

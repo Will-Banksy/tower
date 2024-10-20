@@ -2,10 +2,10 @@ use std::{fmt::Display, rc::Rc};
 
 use crate::{analyser::ttype::OpaqueTypeKind, parser::tree::Literal};
 
-use super::{tree::TypedTreeNode, ttype::Type};
+use super::{stack_effect::StackEffect, tree::TypedTreeNode, ttype::Type};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Value {
+pub struct Value { // TODO: A lot of thought needs to go into this - The current Value struct is not useful at compile time
 	ty: Type,
 	inner: ValueInner
 }
@@ -17,7 +17,7 @@ pub enum ValueInner {
 		to: Rc<Value>
 	},
 	Function {
-		node: Rc<TypedTreeNode>
+		fn_name: String
 	}
 }
 
@@ -36,24 +36,32 @@ impl Value {
 		}
 	}
 
-	pub fn from_lit(lit: &Literal) -> Value {
-		match lit {
-			Literal::U128(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::U64(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::U32(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::U16(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::U8(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::I128(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::I64(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::I32(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::I16(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::I8(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::F64(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::F32(val) => Value::from_typed_bytes(Type::from_lit(lit), val.to_ne_bytes()),
-			Literal::Bool(val) => Value::from_typed_bytes(Type::from_lit(lit), [*val as u8]),
-			Literal::String(val) => Value::new_reference(Value::from_typed_bytes(Type::new_str(val.len()), val.bytes())),
-			Literal::FnPtr(val) => todo!(),
+	pub fn new_fn(fn_name: String, effect: StackEffect) -> Value {
+		Value {
+			ty: Type::Function { name: fn_name.clone(), effect },
+			inner: ValueInner::Function { fn_name }
 		}
+	}
+
+	/// Produces a Value from the passed-in literal. Returns None if the literal requires context (e.g. Literal::FnPtr)
+	pub fn from_lit(lit: &Literal) -> Option<Value> {
+		Some(match lit {
+			Literal::U128(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::U64(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::U32(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::U16(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::U8(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::I128(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::I64(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::I32(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::I16(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::I8(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::F64(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::F32(val) => Value::from_typed_bytes(Type::from_lit(lit)?, val.to_ne_bytes()),
+			Literal::Bool(val) => Value::from_typed_bytes(Type::from_lit(lit)?, [*val as u8]),
+			Literal::String(val) => Value::new_reference(Value::from_typed_bytes(Type::new_str(val.len()), val.bytes())),
+			_ => return None,
+		})
 	}
 
 	pub fn to_lit(&self) -> Value { // TODO: ?

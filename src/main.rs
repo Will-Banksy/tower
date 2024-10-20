@@ -82,7 +82,7 @@ fn dump_typed_tree(tree: &TypedTreeNode, depth: u32) -> String {
 		TypedTree::Word(word) => format!("Word({word})"),
 		TypedTree::Literal { ty, value } => format!("Literal(type: {ty}, value: (unable to be displayed))"),
 		TypedTree::Constructor { ty, effect } => format!("Constructor(of: {ty}, effect: {effect})"),
-		TypedTree::FieldAccess { name, effect } => format!("FieldAccess(field: {name}, effect: {effect}")
+		TypedTree::FieldAccess { name } => format!("FieldAccess(field: {name})")
 	}
 }
 

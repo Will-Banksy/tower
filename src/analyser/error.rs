@@ -58,6 +58,12 @@ impl Display for AnalysisError {
 			AnalysisErrorKind::UnconstructableType { tname } => {
 				write!(f, "type {tname} cannot be constructed (is not a struct or enum variant)")
 			}
+			AnalysisErrorKind::NoSuchField { ty, fname } => {
+				write!(f, "type {ty} does not contain field {fname}")
+			}
+			AnalysisErrorKind::CannotInferType => {
+				write!(f, "cannot infer type")
+			}
 		}
 	}
 }
@@ -82,5 +88,10 @@ pub enum AnalysisErrorKind {
 	},
 	UnconstructableType {
 		tname: String,
-	}
+	},
+	NoSuchField {
+		ty: Type,
+		fname: String
+	},
+	CannotInferType
 }

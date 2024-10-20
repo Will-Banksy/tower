@@ -1,6 +1,6 @@
 use std::fmt::{Display, Write};
 
-use crate::parser::{tree::ParseTreeType, error::{SyntaxError, SyntaxErrorKind}};
+use crate::parser::{error::{SyntaxError, SyntaxErrorKind}, tree::{Literal, ParseTreeType}};
 
 use super::{error::{AnalysisError, AnalysisErrorKind}, ttype::Type};
 
@@ -35,6 +35,35 @@ impl StackEffect {
 		}
 
 		StackEffect::new(popped, im::vector![of])
+	}
+
+	pub fn new_field_access(of: Type, field_type: Type) -> StackEffect {
+		StackEffect::new(im::vector![of.clone()], im::vector![of, field_type])
+	}
+
+	pub fn last_pushed<'a>(&'a self) -> Option<&'a Type> {
+		self.pushed.last()
+	}
+
+	/// Returns the stack effect of the passed-in literal, or None if the literal requires context to work out the type (e.g. FnPtr)
+	pub fn from_lit(lit: &Literal) -> Option<StackEffect> {
+		Some(match lit {
+			Literal::U128(_) => StackEffect::new_pushed(im::vector![Type::new_uint(128)]),
+			Literal::U64(_) => StackEffect::new_pushed(im::vector![Type::new_uint(64)]),
+			Literal::U32(_) => StackEffect::new_pushed(im::vector![Type::new_uint(32)]),
+			Literal::U16(_) => StackEffect::new_pushed(im::vector![Type::new_uint(16)]),
+			Literal::U8(_) => StackEffect::new_pushed(im::vector![Type::new_uint(8)]),
+			Literal::I128(_) => StackEffect::new_pushed(im::vector![Type::new_int(128)]),
+			Literal::I64(_) => StackEffect::new_pushed(im::vector![Type::new_int(64)]),
+			Literal::I32(_) => StackEffect::new_pushed(im::vector![Type::new_int(32)]),
+			Literal::I16(_) => StackEffect::new_pushed(im::vector![Type::new_int(16)]),
+			Literal::I8(_) => StackEffect::new_pushed(im::vector![Type::new_int(8)]),
+			Literal::F64(_) => todo!(),
+			Literal::F32(_) => todo!(),
+			Literal::Bool(_) => StackEffect::new_pushed(im::vector![Type::new_bool()]),
+			Literal::String(s) => StackEffect::new_pushed(im::vector![Type::new_strref(s.len())]),
+			Literal::FnPtr(_) => return None,
+		})
 	}
 
 	// TODO: Turn this shit into something usable with the new way of doing things

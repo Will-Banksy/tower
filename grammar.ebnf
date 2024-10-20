@@ -42,13 +42,15 @@ block = "{" ( s* ( identifier | literal | constructor | field_access ) )* s* "}"
 (* Same definition of identifiers that Rust uses - derived from unicode rules for identifiers *)
 identifier = ( XID_START | "_" ) XID_CONTINUE* ;
 
-literal = literal_string | literal_integer | literal_float ;
+literal = literal_string | literal_integer | literal_float | literal_fnref ;
 
 literal_string = '"' ( ( '\' ( '\' | 'n' | 't' | 'r' | '0' | '"' | ( 'x' NUM_HEX NUM_HEX ) ) ) | CHAR - '"' )* '"' ;
 
 literal_integer = "-"? ( "0b" NUM_BIN+ ) | ( "0x" NUM_HEX+ ) | ( "0o" NUM_OCT+ ) | ( NUM+ ) ( ( "u" | "i" ) ("128" | "64" | "32" | "16" | "8" )? )? ;
 
 literal_float = "-"? NUM+ ( "." NUM* )? ( ( "e" | "E" ) "-"? NUM+ ) ;
+
+literal_fnref = '&' identifier ;
 
 constructor = constructor_struct ;
 

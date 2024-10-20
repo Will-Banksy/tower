@@ -30,7 +30,6 @@ pub enum TypedTree {
 	},
 	FieldAccess {
 		name: String,
-		effect: StackEffect
 	}
 }
 

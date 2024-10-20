@@ -67,8 +67,12 @@ impl Type {
 		Type::Transparent { name, fields: fields.clone(), sum_type: true }
 	}
 
-	pub fn from_lit(lit: &Literal) -> Type {
-		match lit {
+	pub fn new_fnref(name: String, effect: StackEffect) -> Type {
+		Type::Reference { to: Box::new(Type::Function { name, effect }) }
+	}
+
+	pub fn from_lit(lit: &Literal) -> Option<Type> {
+		Some(match lit {
 			Literal::U128(_) => Type::new_uint(128),
 			Literal::U64(_) => Type::new_uint(64),
 			Literal::U32(_) => Type::new_uint(32),
@@ -83,8 +87,8 @@ impl Type {
 			Literal::F32(_) => todo!(),
 			Literal::Bool(_) => Type::new_bool(),
 			Literal::String(val) => Type::new_strref(val.len()),
-			Literal::FnPtr(val) => todo!(),
-		}
+			_ => return None,
+		})
 	}
 
 	pub fn from_name(name: impl AsRef<str>) -> Option<Type> {
