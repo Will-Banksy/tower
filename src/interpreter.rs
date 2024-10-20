@@ -1,11 +1,12 @@
 pub mod error;
-pub mod instructions;
+pub mod builtin;
 
+use builtin::BuiltinWord;
 use error::{RuntimeError, RuntimeErrorKind};
 
 use crate::analyser::{tree::{TypedTree, TypedTreeNode}, ttype::Type, value::{Value, ValueInner}};
 
-pub fn interp(typed_tree: TypedTreeNode) -> Result<Vec<Value>, RuntimeError> {
+pub fn interp(typed_tree: TypedTreeNode, builtins: &im::OrdMap<String, BuiltinWord>) -> Result<Vec<Value>, RuntimeError> {
 	match typed_tree.tree {
 		TypedTree::Module { name: _, elems } => {
 			let fns: im::OrdMap<String, TypedTreeNode> = elems.iter().filter_map(|(name, e)| if let TypedTree::Function { name: _, effect: _, body: _ } = e.tree { Some((name.clone(), e.clone())) } else { None }).collect();
@@ -14,7 +15,7 @@ pub fn interp(typed_tree: TypedTreeNode) -> Result<Vec<Value>, RuntimeError> {
 			if let Some(f) = fns.get("main") {
 				let mut stack: Vec<Value> = Vec::new();
 
-				interp_node(f, &fns, &types, &mut stack)?;
+				interp_node(f, &fns, &types, builtins, &mut stack)?;
 
 				Ok(stack)
 			} else {
@@ -27,14 +28,14 @@ pub fn interp(typed_tree: TypedTreeNode) -> Result<Vec<Value>, RuntimeError> {
 	}
 }
 
-fn interp_node(typed_tree: &TypedTreeNode, fns: &im::OrdMap<String, TypedTreeNode>, types: &im::OrdMap<String, Type>, stack: &mut Vec<Value>) -> Result<(), RuntimeError> {
+fn interp_node(typed_tree: &TypedTreeNode, fns: &im::OrdMap<String, TypedTreeNode>, types: &im::OrdMap<String, Type>, builtins: &im::OrdMap<String, BuiltinWord>, stack: &mut Vec<Value>) -> Result<(), RuntimeError> {
 	match &typed_tree.tree {
 		TypedTree::Module { name: _, elems: _ } => unreachable!(),
 		TypedTree::Function { name, effect: _, body } => {
 			eprintln!("Debug: Executing function {name}");
 
 			for node in body {
-				interp_node(node, fns, types, stack)?;
+				interp_node(node, fns, types, builtins, stack)?;
 			}
 
 			Ok(())
@@ -42,11 +43,18 @@ fn interp_node(typed_tree: &TypedTreeNode, fns: &im::OrdMap<String, TypedTreeNod
 		TypedTree::Type(_) => unreachable!(),
 		TypedTree::Word(wd) => {
 			if let Some(node) = fns.get(wd) {
-				interp_node(node, fns, types, stack)
+				interp_node(node, fns, types, builtins, stack)
 			} else {
 				return Err(RuntimeError::new(RuntimeErrorKind::FunctionMissingError(wd.clone()), typed_tree.cursor))
 			}
 		},
+		TypedTree::BuiltinWord(wd) => {
+			if let Some(builtin) = builtins.get(wd) {
+				(builtin.f)(typed_tree, fns, types, builtins, stack)
+			} else {
+				return Err(RuntimeError::new(RuntimeErrorKind::FunctionMissingError(wd.clone()), typed_tree.cursor))
+			}
+		}
 		TypedTree::Literal { ty: _, value } => {
 			stack.push(value.clone());
 			Ok(())
@@ -75,7 +83,7 @@ fn interp_node(typed_tree: &TypedTreeNode, fns: &im::OrdMap<String, TypedTreeNod
 			if let Some(val) = stack.last() {
 				let field_value = if let ValueInner::Struct(vals) = &val.inner {
 					if let Type::Transparent { name: _, fields, sum_type: false } = &val.ty {
-						vals.iter().zip(fields.iter()).find_map(|(val, (fname, _))| if fname == name { Some(val) } else { None })
+						vals.iter().rev().zip(fields.iter()).find_map(|(val, (fname, _))| if fname == name { Some(val) } else { None })
 					} else {
 						unreachable!()
 					}

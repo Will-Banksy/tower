@@ -12,7 +12,7 @@ pub struct Value { // TODO: A lot of thought needs to go into this - The current
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueInner {
-	Bytes(im::Vector<u8>),
+	Bytes(Vec<u8>),
 	Struct(im::Vector<Value>),
 	Reference {
 		to: Rc<Value>
@@ -72,25 +72,31 @@ impl Value {
 		})
 	}
 
-	pub fn to_lit(&self) -> Value { // TODO: ?
-		todo!()
-		// match self.ty {
-		// 	Type::Opaque { size, kind } => {
-		// 		match kind {
-		// 			OpaqueTypeKind::UnsignedInt => todo!(),
-		// 			OpaqueTypeKind::SignedInt => todo!(),
-		// 			OpaqueTypeKind::Float => todo!(),
-		// 			OpaqueTypeKind::Bool => todo!(),
-		// 			OpaqueTypeKind::Str => todo!(),
-		// 			OpaqueTypeKind::Array => todo!(),
-		// 		}
-		// 		todo!()
-		// 	},
-		// 	Type::Transparent { name, fields, sum_type } => todo!(),
-		// 	Type::Reference { to } => todo!(),
-		// 	Type::Generic { name } => todo!(),
-		// 	Type::Function { name, effect } => todo!(),
-		// }
+	pub fn deref<'a>(&'a self) -> &'a Value {
+		match &self.inner {
+			ValueInner::Reference { to } => &to,
+			_ => &self
+		}
+	}
+
+	pub fn as_strref(&self) -> Option<String> {
+		if *self.ty.deref().as_opaque()?.1 != OpaqueTypeKind::Str {
+			return None;
+		}
+
+		match &self.deref().inner {
+			ValueInner::Bytes(b) => {
+				String::from_utf8(b.clone().into_iter().collect::<Vec<u8>>()).ok()
+			}
+			_ => unreachable!()
+		}
+	}
+
+	pub fn as_bytes(&self) -> Option<&[u8]> {
+		match &self.inner {
+			ValueInner::Bytes(b) => Some(&b),
+			_ => None
+		}
 	}
 }
 

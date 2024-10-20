@@ -1,4 +1,4 @@
-use tower::{analyser::{self, tree::{TypedTree, TypedTreeNode}}, interpreter::interp, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}};
+use tower::{analyser::{self, tree::{TypedTree, TypedTreeNode}}, interpreter::{builtin::builtin_functions, interp}, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}};
 
 fn main() {
 	let towercode = include_str!("../main.tower");
@@ -17,7 +17,8 @@ fn main() {
 			return;
 		}
 	};
-	let typed_tree = match analyser::analyse(&parse_tree) {
+	let builtin_words = builtin_functions();
+	let typed_tree = match analyser::analyse(&parse_tree, &builtin_words) {
 		ScanResult::Valid(tree) => tree,
 		ScanResult::WithErr(e) => {
 			e.print_error(&scanner, scanner.file_path(), std::io::stderr()).unwrap();
@@ -39,7 +40,7 @@ fn main() {
 
 	println!("\n=== STARTING INTERPRETER ===\n");
 
-	let stack = match interp(typed_tree) {
+	let stack = match interp(typed_tree, &builtin_words) {
 		Ok(stack) => stack,
 		Err(e) => {
 			e.print_error(&scanner, "main.tower", std::io::stderr()).unwrap();
@@ -96,6 +97,7 @@ fn dump_typed_tree(tree: &TypedTreeNode, depth: u32) -> String {
 		TypedTree::Function { name, effect, body } => format!("Function(name: {name}, effect: {effect}, body: [\n{}\t])", body.iter().map(|node| format!("\t\t{},\n", dump_typed_tree(node, depth + 1))).collect::<String>()),
 		TypedTree::Type(ty) => format!("Type({ty})"),
 		TypedTree::Word(word) => format!("Word({word})"),
+		TypedTree::BuiltinWord(word) => format!("BuiltinWord({word})"),
 		TypedTree::Literal { ty, value } => format!("Literal(type: {ty}, value: (unable to be displayed))"),
 		TypedTree::Constructor { ty, effect } => format!("Constructor(of: {ty}, effect: {effect})"),
 		TypedTree::FieldAccess { name } => format!("FieldAccess(field: {name})")

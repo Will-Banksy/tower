@@ -5,8 +5,6 @@ pub mod parser;
 pub mod analyser;
 /// Contains the interpreter - A runtime that takes an AST representation of tower code and executes it according to tower's rules
 pub mod interpreter;
-/// Contains defined instructions - compiler-defined functions
-pub mod instructions;
 /// Contains extension method for operating on a Vec<u8> as the program stack
 pub mod stack;
 

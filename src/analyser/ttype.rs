@@ -55,8 +55,8 @@ impl Type {
 		Type::Opaque { size: Some(len_bytes), kind: OpaqueTypeKind::Str }
 	}
 
-	pub fn new_strref(len_bytes: usize) -> Type {
-		Type::Reference { to: Box::new(Type::new_str(len_bytes)) }
+	pub fn new_strref(len_bytes: Option<usize>) -> Type {
+		Type::Reference { to: Box::new(Type::Opaque { size: len_bytes, kind: OpaqueTypeKind::Str }) }
 	}
 
 	pub fn new_struct(name: String, fields: &im::OrdMap<String, Type>) -> Type {
@@ -86,9 +86,61 @@ impl Type {
 			Literal::F64(_) => todo!(),
 			Literal::F32(_) => todo!(),
 			Literal::Bool(_) => Type::new_bool(),
-			Literal::String(val) => Type::new_strref(val.len()),
+			Literal::String(val) => Type::new_strref(Some(val.len())),
 			_ => return None,
 		})
+	}
+
+	pub fn deref<'a>(&'a self) -> &'a Type {
+		match self {
+			Self::Reference { to } => &to,
+			_ => &self
+		}
+	}
+
+	pub fn is_opaque(&self) -> bool {
+		if let Type::Opaque { size: _, kind: _ } = self {
+			true
+		} else {
+			false
+		}
+	}
+
+	pub fn as_opaque<'a>(&'a self) -> Option<(&'a Option<usize>, &'a OpaqueTypeKind)> {
+		if let Type::Opaque { size, kind } = self {
+			Some((&size, &kind))
+		} else {
+			None
+		}
+	}
+
+	pub fn coerces_to(&self, other: &Type) -> bool { // TODO: This needs a lot of work
+		if self == other {
+			true
+		} else {
+			match self {
+				Self::Reference { to } => {
+					let this_ref_to = to;
+					let other_ref_to = if let Type::Reference { to } = other {
+						to
+					} else {
+						return false;
+					};
+
+					match (this_ref_to.as_ref().clone(), other_ref_to.as_ref().clone()) {
+						(Type::Opaque { size, kind }, Type::Opaque { size: other_size, kind: other_kind }) => {
+							if size.is_some() && other_size.is_none() && kind == other_kind {
+								true
+							} else {
+								false
+							}
+						},
+						_ => false
+					}
+				},
+				_ => false
+			}
+		}
 	}
 
 	pub fn from_name(name: impl AsRef<str>) -> Option<Type> {

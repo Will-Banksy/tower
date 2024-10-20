@@ -20,6 +20,7 @@ pub enum TypedTree {
 	},
 	Type(Type),
 	Word(String),
+	BuiltinWord(String),
 	Literal {
 		ty: Type,
 		value: Value

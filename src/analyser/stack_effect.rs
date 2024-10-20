@@ -61,34 +61,21 @@ impl StackEffect {
 			Literal::F64(_) => todo!(),
 			Literal::F32(_) => todo!(),
 			Literal::Bool(_) => StackEffect::new_pushed(im::vector![Type::new_bool()]),
-			Literal::String(s) => StackEffect::new_pushed(im::vector![Type::new_strref(s.len())]),
+			Literal::String(s) => StackEffect::new_pushed(im::vector![Type::new_strref(Some(s.len()))]),
 			Literal::FnPtr(_) => return None,
 		})
 	}
 
-	// TODO: Turn this shit into something usable with the new way of doing things
-	//       Essentially, this will help craft the type system
-	//       I think we need context however - Whether a type can "become" a generic type is dependent on the required functions to be defined
-	pub fn combine(mut self, next: &StackEffect) -> Result<StackEffect, AnalysisError> {
+	// TODO: Finish crafting the type system & implement this
+	pub fn combine(mut self, next: &StackEffect, cursor: usize) -> Result<StackEffect, AnalysisError> {
 		let mut next = next.clone();
 		while self.pushed.len() > 0 && next.popped.len() > 0 {
 			let pushed = self.pushed.pop_back().unwrap();
 			let popped = next.popped.pop_front().unwrap();
-			if pushed == popped {
+			if pushed.coerces_to(&popped) {
 				() // good, true
-			} else if let Type::Generic { name } = pushed {
-				if let Type::Generic { name } = popped {
-					// TODO: Check whether generic types are compatible
-				}
-				// TODO: Check whether pushed generic type is compatible with popped concrete type - Or instead delegate this decision to the popper
-
-				todo!() // NOTE: Generics are temporarily disabled
-			} else if let Type::Generic { name } = popped {
-				// TODO: Check whether the pushed concrete type is compatible with the popped generic type
-
-				todo!()
 			} else {
-				return Err(AnalysisError::new(AnalysisErrorKind::IncompatibleTypes { source: pushed, dest: popped }, 0))
+				return Err(AnalysisError::new(AnalysisErrorKind::IncompatibleTypes { source: pushed, dest: popped }, cursor))
 			}
 		}
 

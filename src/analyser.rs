@@ -12,7 +12,7 @@ use tree::{TypedTree, TypedTreeNode};
 use ttype::Type;
 use value::Value;
 
-use crate::{brk, parser::{result::ScanResult::{self, Unrecognised, Valid, WithErr}, tree::{Literal, ParseTree, ParseTreeNode, ParseTreeType}}};
+use crate::{brk, interpreter::builtin::BuiltinWord, parser::{result::ScanResult::{self, Unrecognised, Valid, WithErr}, tree::{Literal, ParseTree, ParseTreeNode, ParseTreeType}}};
 
 // NOTE: I don't like this
 #[derive(PartialEq, Clone, Debug)]
@@ -197,7 +197,7 @@ impl Display for TowerType {
 
 type AnalysisResult<T> = ScanResult<T, AnalysisError>;
 
-fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, TypedTreeNode>, parse_tree_tles: &im::OrdMap<String, ParseTreeNode>) -> AnalysisResult<TypedTreeNode> {
+fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, TypedTreeNode>, parse_tree_tles: &im::OrdMap<String, ParseTreeNode>, builtins: &im::OrdMap<String, BuiltinWord>) -> AnalysisResult<TypedTreeNode> {
 	let tree = match &parse_tree.tree {
 		ParseTree::Module { name, elems } => {
 			let mut typed_elems = im::OrdMap::new();
@@ -210,7 +210,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 				while i < to_analyse.len() {
 					let (name, node) = &to_analyse[i];
 					i += 1;
-					match calc_stack_effects(&node, &typed_elems, elems) {
+					match calc_stack_effects(&node, &typed_elems, elems, builtins) {
 						Valid(node) => {
 							typed_elems.insert(name.to_string(), node);
 							i -= 1;
@@ -233,23 +233,31 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 			for elem in body {
 				let new_effect = match &elem.tree {
 					ParseTree::Identifier(ident) => {
-						let func_node = if let Some(func_node) = tles.get(ident) {
-							func_node
-						} else if parse_tree_tles.contains_key(ident) {
-							// If we don't know the effect of a used function (but it exists), return Unrecognised to skip evaluating this function for now
-							return Unrecognised;
+						if ident.starts_with("__") {
+							if let Some(builtin) = builtins.get(ident) {
+								builtin.effect.clone()
+							} else {
+								return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: ident.clone() }, elem.cursor))
+							}
 						} else {
-							// If that function doesn't exist, however, we error
-							return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: ident.to_string() }, elem.cursor));
-						};
+							let func_node = if let Some(func_node) = tles.get(ident) {
+								func_node
+							} else if parse_tree_tles.contains_key(ident) {
+								// If we don't know the effect of a used function (but it exists), return Unrecognised to skip evaluating this function for now
+								return Unrecognised;
+							} else {
+								// If that function doesn't exist, however, we error
+								return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchFunction { fname: ident.to_string() }, elem.cursor));
+							};
 
-						let ident_effect = match &func_node.tree {
-							TypedTree::Function { effect, .. } => effect,
-							TypedTree::Type(ty) => return WithErr(AnalysisError::new(AnalysisErrorKind::TypeIsNotFunction { tname: ty.name() }, elem.cursor)),
-							_ => unreachable!()
-						};
+							let ident_effect = match &func_node.tree {
+								TypedTree::Function { effect, .. } => effect,
+								TypedTree::Type(ty) => return WithErr(AnalysisError::new(AnalysisErrorKind::TypeIsNotFunction { tname: ty.name() }, elem.cursor)),
+								_ => unreachable!()
+							};
 
-						ident_effect.clone()
+							ident_effect.clone()
+						}
 					},
 					ParseTree::Literal(literal) => {
 						match literal {
@@ -325,9 +333,9 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 					_ => unreachable!()
 				};
 
-				typed_body.push_back(brk!(calc_stack_effects(elem, tles, parse_tree_tles)));
+				typed_body.push_back(brk!(calc_stack_effects(elem, tles, parse_tree_tles, builtins)));
 
-				effect = match effect.combine(&new_effect) {
+				effect = match effect.combine(&new_effect, elem.cursor) {
 					Ok(effect) => effect,
 					Err(e) => return WithErr(e)
 				};
@@ -352,7 +360,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 							// If we don't know the type of a used type name (but it exists), return Unrecognised to skip evaluating this type for now
 							return Unrecognised;
 						} else {
-							return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchType { tname: ftype.to_string() }, 0))
+							return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchType { tname: ftype.to_string() }, parse_tree.cursor))
 						}
 					}
 				};
@@ -363,7 +371,13 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 			TypedTree::Type(Type::new_struct(name.to_string(), &typed_fields))
 		},
 		ParseTree::Enum { name, fields } => todo!(), // TODO
-		ParseTree::Identifier(s) => TypedTree::Word(s.to_string()),
+		ParseTree::Identifier(s) => {
+			if s.starts_with("__") {
+				TypedTree::BuiltinWord(s.clone())
+			} else {
+				TypedTree::Word(s.clone())
+			}
+		},
 		ParseTree::Literal(literal) => {
 			let (ty, value) = match literal {
 				Literal::FnPtr(fn_name) => match tles.get(fn_name) {
@@ -400,7 +414,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 						// If we don't know the type of a used type name (but it exists), return Unrecognised to skip evaluating this type for now
 						return Unrecognised;
 					} else {
-						return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchType { tname: ident.to_string() }, 0))
+						return WithErr(AnalysisError::new(AnalysisErrorKind::NoSuchType { tname: ident.to_string() }, parse_tree.cursor))
 					}
 				}
 			};
@@ -409,7 +423,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 				Type::Transparent { name: _, fields, sum_type } => { // TODO: Handle sum types (enums)
 					StackEffect::new_constructor(ctype.clone(), fields)
 				}
-				_ => return WithErr(AnalysisError::new(AnalysisErrorKind::UnconstructableType { tname: ctype.name() }, 0))
+				_ => return WithErr(AnalysisError::new(AnalysisErrorKind::UnconstructableType { tname: ctype.name() }, parse_tree.cursor))
 			};
 
 			TypedTree::Constructor { ty: ctype, effect }
@@ -425,11 +439,11 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 }
 
 /// Performs semantic analysis
-pub fn analyse(parse_tree: &ParseTreeNode) -> AnalysisResult<TypedTreeNode> {
+pub fn analyse(parse_tree: &ParseTreeNode, builtins: &im::OrdMap<String, BuiltinWord>) -> AnalysisResult<TypedTreeNode> {
 	// TODO: ALSO need to do monomorphisation and figure out generics
 	// TODO: ALSO need to assign paths to all the relevant things i.e. module::Trait::function, module::function, module::module::module::Struct
 
-	let typed_tree = calc_stack_effects(parse_tree, &im::OrdMap::new(), &im::OrdMap::new());
+	let typed_tree = calc_stack_effects(parse_tree, &im::OrdMap::new(), &im::OrdMap::new(), builtins);
 
 	typed_tree
 }
