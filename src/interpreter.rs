@@ -1,69 +1,98 @@
 pub mod error;
+pub mod instructions;
 
-// use std::collections::HashMap;
+use error::{RuntimeError, RuntimeErrorKind};
 
-// use crate::{error::RuntimeError, stack::TowerStack};
+use crate::analyser::{tree::{TypedTree, TypedTreeNode}, ttype::Type, value::{Value, ValueInner}};
 
-// #[derive(Debug, Clone, PartialEq)]
-// pub enum StackItem {
-// 	U64(u64),
-// 	I64(i64),
-// 	F64(f64),
-// 	Bool(bool),
-// 	StrPtr(Rc<str>),
-// 	FnPtr(Rc<str>),
-// }
+pub fn interp(typed_tree: TypedTreeNode) -> Result<Vec<Value>, RuntimeError> {
+	match typed_tree.tree {
+		TypedTree::Module { name: _, elems } => {
+			let fns: im::OrdMap<String, TypedTreeNode> = elems.iter().filter_map(|(name, e)| if let TypedTree::Function { name: _, effect: _, body: _ } = e.tree { Some((name.clone(), e.clone())) } else { None }).collect();
+			let types: im::OrdMap<String, Type> = elems.iter().filter_map(|(name, e)| if let TypedTree::Type(t) = &e.tree { Some((name.clone(), t.clone())) } else { None }).collect();
 
-// pub fn interp(program: AnnotatedASTNode, stack: &mut Box<dyn TowerStack>) -> Result<(), RuntimeError> { // TODO: Make the tower language compatible with and interpreter able to run as a REPL
-// 	if let ASTNode::Module(tles, entry_point) = &program.node {
-// 		// if let Some(entry_point) = entry_point {
-// 		exec_fn(stack, &tles, &entry_point)?;
-// 		Ok(())
-// 		// } else {
-// 		// 	Err("[ERROR]: No defined entry point".into())
-// 		// }
-// 	} else {
-// 		Err(RuntimeError::ModuleNotFoundError)
-// 	}
-// }
+			if let Some(f) = fns.get("main") {
+				let mut stack: Vec<Value> = Vec::new();
 
-// pub(crate) fn exec_fn(stack: &mut Box<dyn TowerStack>, fns: &HashMap<String, AnnotatedASTNode>, fn_name: &str) -> Result<(), RuntimeError> {
-// 	let func = fns.get(fn_name).ok_or(RuntimeError::FunctionMissingError(fn_name.into()))?;
+				interp_node(f, &fns, &types, &mut stack)?;
 
-// 	exec_node(stack, fns, func)
-// }
+				Ok(stack)
+			} else {
+				return Err(RuntimeError::new(RuntimeErrorKind::FunctionMissingError("main".to_string()), typed_tree.cursor));
+			}
+		},
+		_ => {
+			return Err(RuntimeError::new(RuntimeErrorKind::ModuleNotFoundError, typed_tree.cursor))
+		}
+	}
+}
 
-// pub(crate) fn exec_node(stack: &mut Box<dyn TowerStack>, fns: &HashMap<String, AnnotatedASTNode>, node: &AnnotatedASTNode) -> Result<(), RuntimeError> {
-// 	match &node.node {
-// 		ASTNode::Module(_, _) => unimplemented!(),
-// 		ASTNode::Function(node) => exec_node(stack, fns, node),
-// 		ASTNode::Keyword(_) => unimplemented!(),
-// 		ASTNode::Literal(lit) => {
-// 			// let item = lit_to_stackitem(lit);
-// 			stack.push_lit(lit)?;
-// 			Ok(())
-// 		},
-// 		ASTNode::Identifier(word) => exec_fn(stack, fns, word),
-// 		ASTNode::Instruction(func) => func(stack, fns),
-// 		ASTNode::Block(blck_body) => {
-// 			for node in blck_body {
-// 				let res = exec_node(stack, fns, node);
-// 				if res.is_err() {
-// 					return res;
-// 				}
-// 			}
-// 			Ok(())
-// 		}
-// 	}
-// }
+fn interp_node(typed_tree: &TypedTreeNode, fns: &im::OrdMap<String, TypedTreeNode>, types: &im::OrdMap<String, Type>, stack: &mut Vec<Value>) -> Result<(), RuntimeError> {
+	match &typed_tree.tree {
+		TypedTree::Module { name: _, elems: _ } => unreachable!(),
+		TypedTree::Function { name, effect: _, body } => {
+			eprintln!("Debug: Executing function {name}");
 
-// fn lit_to_stackitem(lit: &Literal) -> StackItem {
-// 	match lit {
-// 		Literal::U64(n) => StackItem::U64(*n),
-// 		Literal::I64(n) => StackItem::I64(*n),
-// 		Literal::F64(n) => StackItem::F64(*n),
-// 		Literal::Bool(b) => StackItem::Bool(*b),
-// 		Literal::String(s) => StackItem::StrPtr(s.clone().into()),
-// 		Literal::FnPtr(f) => StackItem::FnPtr(f.clone().into()),
-// 	}
-// }
+			for node in body {
+				interp_node(node, fns, types, stack)?;
+			}
+
+			Ok(())
+		},
+		TypedTree::Type(_) => unreachable!(),
+		TypedTree::Word(wd) => {
+			if let Some(node) = fns.get(wd) {
+				interp_node(node, fns, types, stack)
+			} else {
+				return Err(RuntimeError::new(RuntimeErrorKind::FunctionMissingError(wd.clone()), typed_tree.cursor))
+			}
+		},
+		TypedTree::Literal { ty: _, value } => {
+			stack.push(value.clone());
+			Ok(())
+		},
+		TypedTree::Constructor { ty, effect: _ } => {
+			match ty {
+				Type::Transparent { name: _, fields, sum_type } => {
+					if *sum_type {
+						todo!()
+					}
+
+					let mut values = im::Vector::new();
+					for (_, ftype) in fields {
+						values.push_back(stack.pop().expect("Expected value on stack"));
+						assert_eq!(values.last().unwrap().ty, *ftype);
+					}
+
+					stack.push(Value::new_struct(ty.clone(), values));
+
+					Ok(())
+				},
+				_ => unreachable!()
+			}
+		},
+		TypedTree::FieldAccess { name } => {
+			if let Some(val) = stack.last() {
+				let field_value = if let ValueInner::Struct(vals) = &val.inner {
+					if let Type::Transparent { name: _, fields, sum_type: false } = &val.ty {
+						vals.iter().zip(fields.iter()).find_map(|(val, (fname, _))| if fname == name { Some(val) } else { None })
+					} else {
+						unreachable!()
+					}
+				} else {
+					unreachable!()
+				};
+
+				if let Some(field_value) = field_value {
+					stack.push(field_value.clone());
+
+					Ok(())
+				} else {
+					unreachable!()
+				}
+			} else {
+				return Err(RuntimeError::new(RuntimeErrorKind::StackUnderflowError, typed_tree.cursor));
+			}
+		},
+	}
+}

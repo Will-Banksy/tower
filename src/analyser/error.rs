@@ -28,7 +28,7 @@ impl AnalysisError {
 		let num_tabs = context.chars().filter(|&c| c == '\t').count();
 		let cursor_indicator = [ " ".repeat(row_str.len()), " | ".to_string(), "    ".repeat(num_tabs), " ".repeat(col.saturating_sub(1 + num_tabs)), "^".to_string() ].join("");
 
-		writeln!(writer, "Syntax Error at {file_name}:{col}:{row} - {self}")?;
+		writeln!(writer, "Analysis Error at {file_name}:{col}:{row} - {self}")?;
 		writeln!(writer, "{} | ", " ".repeat(row_str.len()))?;
 		writeln!(writer, "{row} | {}", context.replace("\t", "    "))?;
 		writeln!(writer, "{cursor_indicator}")?;

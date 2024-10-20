@@ -206,7 +206,6 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 			// FIXME: Will currently infinitely loop where there are recursive functions. Check if any functions have been resolved after each iteration and if not then error
 			//        Will also infinitely loop where, and this is important, there is a function that refers to another function that has not been analysed yet
 			while !to_analyse.is_empty() {
-				eprintln!("Checkpoint #0");
 				let mut i = 0;
 				while i < to_analyse.len() {
 					let (name, node) = &to_analyse[i];
@@ -425,7 +424,7 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 	)
 }
 
-/// Performs semantic analysis - Defines instructions and checks stack effects
+/// Performs semantic analysis
 pub fn analyse(parse_tree: &ParseTreeNode) -> AnalysisResult<TypedTreeNode> {
 	// TODO: ALSO need to do monomorphisation and figure out generics
 	// TODO: ALSO need to assign paths to all the relevant things i.e. module::Trait::function, module::function, module::module::module::Struct

@@ -6,13 +6,14 @@ use super::{stack_effect::StackEffect, tree::TypedTreeNode, ttype::Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Value { // TODO: A lot of thought needs to go into this - The current Value struct is not useful at compile time
-	ty: Type,
-	inner: ValueInner
+	pub ty: Type,
+	pub inner: ValueInner
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueInner {
 	Bytes(im::Vector<u8>),
+	Struct(im::Vector<Value>),
 	Reference {
 		to: Rc<Value>
 	},
@@ -40,6 +41,13 @@ impl Value {
 		Value {
 			ty: Type::Function { name: fn_name.clone(), effect },
 			inner: ValueInner::Function { fn_name }
+		}
+	}
+
+	pub fn new_struct(ty: Type, values: im::Vector<Value>) -> Value {
+		Value {
+			ty,
+			inner: ValueInner::Struct(values)
 		}
 	}
 
@@ -88,6 +96,6 @@ impl Value {
 
 impl Display for Value {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { // TODO: ?
-		todo!()
+		write!(f, "Value(of_type: {}, value: (unable to be displayed))", self.ty)
 	}
 }

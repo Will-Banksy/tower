@@ -1,4 +1,4 @@
-use tower::{analyser::{self, tree::{TypedTree, TypedTreeNode}}, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}};
+use tower::{analyser::{self, tree::{TypedTree, TypedTreeNode}}, interpreter::interp, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}};
 
 fn main() {
 	let towercode = include_str!("../main.tower");
@@ -36,6 +36,22 @@ fn main() {
 	println!("\n=== TYPED TREE ===\n");
 
 	println!("{}", dump_typed_tree(&typed_tree, 0));
+
+	println!("\n=== STARTING INTERPRETER ===\n");
+
+	let stack = match interp(typed_tree) {
+		Ok(stack) => stack,
+		Err(e) => {
+			e.print_error(&scanner, "main.tower", std::io::stderr()).unwrap();
+			return;
+		}
+	};
+
+	println!("\n=== POST-INTERP INFO ===\n");
+
+	println!("Stack len: {}", stack.len());
+
+	println!("Stack: [{}]", stack.iter().map(|v| format!("{v}")).collect::<Vec<String>>().join(", "));
 
 	// let effects = analyse(&mut ast, &mut node_id).unwrap();
 
