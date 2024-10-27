@@ -208,7 +208,10 @@ impl Display for Type {
 							OpaqueTypeKind::Array => todo!()
 						}
 					} else {
-						unreachable!()
+						match kind {
+							OpaqueTypeKind::Str => format!("str"),
+							_ => unreachable!()
+						}
 					}
 				}
 				Self::Transparent { name, fields, sum_type } => {

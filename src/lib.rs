@@ -7,6 +7,8 @@ pub mod analyser;
 pub mod interpreter;
 /// Contains extension method for operating on a Vec<u8> as the program stack
 pub mod stack;
+/// Contains the LLVM-based compiler
+pub mod compiler;
 
 /// Acts like the ? operator on ScanResults - Returns early on WithErr and Unrecognised
 #[macro_export]

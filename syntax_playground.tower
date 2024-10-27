@@ -1,0 +1,160 @@
+fn main = 1 2 add ;
+
+trait Add<T> {
+	type Output;
+
+	fn add ( a: Self, b: Self -> c: Self::Output ) # add two numbers
+}
+
+impl Add<u64> for u64 {
+	type Output = u64;
+
+	fn add ( a: Self, b: Self -> c: Self::Output ) = # impl
+}
+
+trait Clone {
+	fn clone ( a: Self -> b: Self, c: Self)
+}
+
+# ===
+
+type Point {
+	x: u64,
+	y: u64
+}
+
+type Option<T> {
+	Some ( T )
+	| None
+}
+
+type PointOrSize {
+	Point(Point)
+	| Size(type {
+		width: u64,
+		height: u64
+	})
+}
+
+# ===
+
+# Here's some syntax more along the lines that I was originally thinking...
+
+abstract fn add<X, Y, Z> (x: X, y: Y -> Z)
+
+type Point {
+	x: u64,
+	y: u64
+}
+
+impl fn add<Point, Point, Point> (x, y -> Z) {
+	x.x y.x add
+	x.y y.y add
+	Point { x, y } # Or however we create structs
+}
+
+fn double<T> (n: T -> T) ifdef add<T, T, T> {
+	n n add
+}
+
+fn double_and_add<X, Y, Z> (x: X, y: Y -> Z) ifdef double<X>, double<Y>, add<X, Y, Z> {
+	x double y double add
+}
+
+fn double_and_add_points {
+	1 1 Point { x, y }
+	1 1 Point { x, y }
+	double_and_add
+	# Will return Point { x: 4, y: 4 }
+}
+
+fnset SelfAdd<T> {
+	# Should these be new functions or references to existing functions...? The latter I'd say
+	fn add<T, T, T>
+	fn double<T>
+}
+
+impl SelfAdd<Point> {
+	impl fn add<T, T, T> (x: T, y: T -> T) {
+		x.x y.x add
+		x.y y.y add
+		Point { x, y } # Or however we create structs
+	}
+
+	# What should we do if a function is already defined with a blanket define for the type, like double is for Point?
+	impl fn double<T> (n: T -> T) {
+		n n add
+	}
+
+	# This? "with implemented function double"
+	with impl fn double<T>
+
+	# Or maybe nothing, and the compiler picks up that that function is already defined...
+}
+
+# ===
+
+fn main {
+	5 var %five
+	%five %five add print # Prints 10
+}
+
+# ===
+
+# Metaprogramming?
+macro fn import ( ts: TokenProducer -> ParseTree ) {
+	# Some code getting tokens from TokenProducer and producing a ParseTree or some tokens in response or some shit
+	get_token to_string read_file_to_string parse_tower_code
+}
+
+# ===
+
+fn square {
+	dup mul
+}
+
+fn factorial ( x: 'N -> 'N ) {
+	1 gt { factorial mul } { drop 1 } ifelse
+}
+
+# ===
+
+fn ifgt1 ( e: ( 'N -> 'N ), i: ( 'N -> 'N), n: 'N -> 'N) {
+	1 gt lrot3 ifelse
+}
+
+fn factorial ( x: 'N -> 'N ) {
+	{ factorial mul } { drop 1 } ifgt1
+}
+
+# ===
+
+// This is the C code for factorial - We want to be more expressive and terse than this ideally
+int factorial(int x) {
+	x == 1 ? 1 : factorial(x * x)
+}
+
+# ===
+
+# Primitive recursion operator as found in Joy might be useful
+# https://www.kevinalbrecht.com/code/joy-mirror/j00ovr.html
+fn factorial {
+	{ 1 } &mul primrec
+}
+
+# Or maybe we define a generic "recursion" operator that takes 3 functions:
+# A base case detection fn
+# A base case value generator fn
+# A recursive value generator fn
+fn rec ( base_detect: ('T -> bool), base_gen: ('T -> 'T), rec_gen: ('T -> 'T) ) {
+	# We can probably define this with usual recursion, as long as we have access to that
+}
+
+fn factorial {
+	{ 1 eq }
+	{ drop 1 }
+	{ 1 sub mul }
+	rec
+}
+
+# And we can probably define recursion functions like primrec with it

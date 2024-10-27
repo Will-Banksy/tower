@@ -1,0 +1,16 @@
+fn main {
+	"✨ hello world ✨" ps 0u 1u -> Point .y __println_u32 &dup
+}
+
+fn ps {
+	__println_str
+}
+
+fn dup {}
+
+fn push_nums { 0b101 0xff 0o70 1963 9i8 0b10000000i128 }
+
+struct Point {
+	x: u32
+	y: u32
+}
