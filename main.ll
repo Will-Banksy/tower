@@ -238,14 +238,10 @@ define void @tower_main(i8** %bp_ptr, i8** %sp_ptr, i8** %ep_ptr) {
 	%sp.10 = load i8*, i8** %sp_ptr
 	%ep.10 = load i8*, i8** %ep_ptr
 
-	call void @__dbg_checkpoint(i32 0)
-
 	call void @__println_u32(i8** %bp_ptr, i8** %sp_ptr, i8** %ep_ptr)
 	%bp.11 = load i8*, i8** %bp_ptr
 	%sp.11 = load i8*, i8** %sp_ptr
 	%ep.11 = load i8*, i8** %ep_ptr
-
-	call void @__dbg_checkpoint(i32 1)
 
 	ret void
 }

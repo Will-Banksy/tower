@@ -30,11 +30,14 @@
 			"<? "explanation" ?>" can be used to denote syntax that is highly complex and isn't formalised in the EBNF grammar
 *)
 
-module = ( s* ( function | structure ) )* ;
+module = ( s* ( function | structure | constant ) )* ;
 
 function = "fn" s+ identifier s* stack_effect? s* block ;
 
 structure = "struct" s+ identifier s* '{' ( s* identifier s* ':' ( identifier ) )* s* '}' ;
+
+(* // TODO: Implement constant parsing and integrate into analysis. Also need to turn string literals into constants for compilation *)
+constant = "const" s+ identifier s* ':' s* identifier '=' literal ;
 
 stack_effect = '(' s* identifier_list s* "->" s* identifier_list s* ')' ;
 
@@ -43,6 +46,7 @@ identifier_list = ( identifier (s* ',' s* identifier )* )? ;
 (* // NOTE: Add necessary spaceing between items in a block? E.g. currently "this"isvalid as a string literal and identifier *)
 block = "{" ( s* ( identifier | literal | constructor | field_access ) )* s* "}" ;
 
+(* // TODO: Integrate this into grammar *)
 instruct_identifier = "__" identifier ;
 
 (* Same definition of identifiers that Rust uses - derived from unicode rules for identifiers *)
@@ -62,7 +66,7 @@ constructor = constructor_struct ;
 
 constructor_struct = "->" s+ identifier ;
 
-field_access = "." identifier ; (* // TODO: Implement this now *)
+field_access = "." identifier ;
 
 (*
 literal_enum = identifier '::' ( identifier | literal_struct ) ;
