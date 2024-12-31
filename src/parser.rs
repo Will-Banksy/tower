@@ -13,7 +13,7 @@ use unicode_xid::UnicodeXID;
 
 use crate::{analyser::TowerType, brk};
 
-type ParseResult<T> = ScanResult<T, SyntaxError>;// Option<Result<T, SyntaxError>>;
+type ParseResult<T> = ScanResult<T, SyntaxError>;
 
 #[derive(Debug, Clone)]
 pub enum TokenType { // TODO: Evaluate these, and ideally have these represented in the grammar

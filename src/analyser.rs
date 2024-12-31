@@ -12,7 +12,7 @@ use tree::{TypedTree, TypedTreeNode};
 use ttype::Type;
 use value::Value;
 
-use crate::{brk, interpreter::builtin::BuiltinWord, parser::{result::ScanResult::{self, Unrecognised, Valid, WithErr}, tree::{Literal, ParseTree, ParseTreeNode, ParseTreeType}}};
+use crate::{brk, interpreter::builtin::BuiltinWord, parser::{result::ScanResult::{self, Unrecognised, Valid, WithErr}, tree::{Literal, ParseTree, ParseTreeNode}}};
 
 // NOTE: I don't like this
 #[derive(PartialEq, Clone, Debug)]

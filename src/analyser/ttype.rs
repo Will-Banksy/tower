@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use crate::parser::tree::Literal;
 
-use super::{stack_effect::StackEffect, value::Value};
+use super::stack_effect::StackEffect;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
@@ -185,7 +185,7 @@ impl Type {
 					}
 				}
 			},
-			Type::Transparent { name, fields, sum_type } => todo!(),
+			Type::Transparent { name, fields, sum_type } => todo!(), // TODO: All of these
 			Type::Reference { to } => todo!(),
 			Type::Generic { name } => todo!(),
 			Type::Function { name, effect } => todo!(),

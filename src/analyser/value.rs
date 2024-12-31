@@ -2,7 +2,7 @@ use std::{fmt::Display, rc::Rc};
 
 use crate::{analyser::ttype::OpaqueTypeKind, parser::tree::Literal};
 
-use super::{stack_effect::StackEffect, tree::TypedTreeNode, ttype::Type};
+use super::{stack_effect::StackEffect, ttype::Type};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Value { // TODO: A lot of thought needs to go into this - The current Value struct is not useful at compile time

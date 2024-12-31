@@ -1,6 +1,6 @@
 use std::fmt::{Display, Write};
 
-use crate::parser::{error::{SyntaxError, SyntaxErrorKind}, tree::{Literal, ParseTreeType}};
+use crate::parser::tree::Literal;
 
 use super::{error::{AnalysisError, AnalysisErrorKind}, ttype::Type};
 
