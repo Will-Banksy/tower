@@ -1,6 +1,10 @@
-use tower::{analyser::{self, tree::{TypedTree, TypedTreeNode}}, interpreter::{builtin::builtin_functions, interp}, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}};
+use tower::{analyser::{self, tree::{TypedTree, TypedTreeNode}}, compiler, interpreter::{builtin::builtin_functions, interp}, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}};
 
 fn main() {
+	compiler::compile_test_program();
+
+	return;
+
 	let towercode = include_str!("../main.tower");
 	// let tokens = tokenise(towercode).unwrap();
 	// println!("TOKENS: {:?}", tokens);

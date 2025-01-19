@@ -7,6 +7,7 @@
 declare i32 @printf(i8* %fmt_str, ...) ; format string, ...arguments -> error code
 declare i8* @malloc(i64 %size)
 declare i8* @realloc(i8* %ptr, i64 %size)
+declare i32 @puts(i8* %str)
 
 define i32 @main(i32 %argc, i8** %argv) {
 	%init_size = add i32 4096, 0

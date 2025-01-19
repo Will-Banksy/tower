@@ -3,7 +3,7 @@ pub mod result;
 pub mod tree;
 pub mod error;
 
-use std::num::IntErrorKind;
+use std::{num::IntErrorKind, path::Path};
 
 use error::{SyntaxError, SyntaxErrorKind};
 use result::ScanResult::{self, Valid, WithErr, Unrecognised};
@@ -76,7 +76,12 @@ fn module(scanner: &mut Scanner) -> ParseResult<ParseTree> {
 
 	eprintln!("module end");
 
-	Valid(ParseTree::Module { name: "".into(), elems })
+	let modname = Path::new(scanner.file_path()).file_stem().expect("Invalid file path?");
+
+	Valid(ParseTree::Module {
+		name: modname.to_str().expect("Invalid UTF-8 in file path").to_string(),
+		elems
+	})
 }
 
 /// Returns a Function ASTNode, paired with the function name

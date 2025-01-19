@@ -11,6 +11,7 @@ pub struct AnalysisError {
 }
 
 impl AnalysisError {
+	// TODO: Perhaps take multiple cursors? Or think about how to handle multiple errors caught at the same time, such as recursive functions
 	pub fn new(kind: AnalysisErrorKind, cursor: usize) -> Self {
 		AnalysisError {
 			kind,
@@ -63,6 +64,9 @@ impl Display for AnalysisError {
 			}
 			AnalysisErrorKind::CannotInferType => {
 				write!(f, "cannot infer type")
+			},
+			AnalysisErrorKind::FunctionDependencyLoop { fn_names } => {
+				write!(f, "cannot calculate stack effects of recursive, effectively recursive or recursive-dependent functions: [{}]", fn_names.join(", "))
 			}
 		}
 	}
@@ -93,5 +97,9 @@ pub enum AnalysisErrorKind {
 		ty: Type,
 		fname: String
 	},
-	CannotInferType
+	CannotInferType,
+	// E.g. Cannot infer types of recursive functions
+	FunctionDependencyLoop {
+		fn_names: Vec<String>
+	}
 }

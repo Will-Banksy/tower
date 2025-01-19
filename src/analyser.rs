@@ -203,10 +203,10 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 			let mut typed_elems = im::OrdMap::new();
 			let mut to_analyse: Vec<(&String, &ParseTreeNode)> = elems.into_iter().collect();
 
-			// FIXME: Will currently infinitely loop where there are recursive functions. Check if any functions have been resolved after each iteration and if not then error
-			//        Will also infinitely loop where, and this is important, there is a function that refers to another function that has not been analysed yet
 			while !to_analyse.is_empty() {
 				let mut i = 0;
+				// Have any new top-level elements been resolved?
+				let mut any_new_resolved = false;
 				while i < to_analyse.len() {
 					let (name, node) = &to_analyse[i];
 					i += 1;
@@ -215,12 +215,18 @@ fn calc_stack_effects(parse_tree: &ParseTreeNode, tles: &im::OrdMap<String, Type
 							typed_elems.insert(name.to_string(), node);
 							i -= 1;
 							to_analyse.remove(i);
+							any_new_resolved = true;
 						}
 						Unrecognised => {
 							()
 						}
 						WithErr(e) => return WithErr(e.clone())
 					}
+				}
+				// If no new top-level elements have been resolved since last loop over remaining elements to resolve, then
+				// there is recursion
+				if !any_new_resolved {
+					return WithErr(AnalysisError::new(AnalysisErrorKind::FunctionDependencyLoop { fn_names: to_analyse.iter().map(|n| n.0.clone()).collect() }, parse_tree.cursor));
 				}
 			}
 

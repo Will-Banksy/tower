@@ -37,7 +37,8 @@ function = "fn" s+ identifier s* stack_effect? s* block ;
 structure = "struct" s+ identifier s* '{' ( s* identifier s* ':' ( identifier ) )* s* '}' ;
 
 (* // TODO: Implement constant parsing and integrate into analysis. Also need to turn string literals into constants for compilation *)
-constant = "const" s+ identifier s* ':' s* identifier '=' literal ;
+constant = "const" s+ identifier s* '=' literal ;
+(* constant = "const" s+ identifier s* ':' s* identifier '=' literal ; // NOTE: Do we want to annotate the type? Probably eventually *)
 
 stack_effect = '(' s* identifier_list s* "->" s* identifier_list s* ')' ;
 
@@ -47,7 +48,7 @@ identifier_list = ( identifier (s* ',' s* identifier )* )? ;
 block = "{" ( s* ( identifier | literal | constructor | field_access ) )* s* "}" ;
 
 (* // TODO: Integrate this into grammar *)
-instruct_identifier = "__" identifier ;
+builtin_identifier = "__" identifier ;
 
 (* Same definition of identifiers that Rust uses - derived from unicode rules for identifiers *)
 identifier = ( XID_START | "_" ) XID_CONTINUE* ;
