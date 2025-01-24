@@ -1,4 +1,4 @@
-use std::{ffi::CStr, marker::PhantomData, mem};
+use std::{ffi::{CStr, CString}, marker::PhantomData, mem};
 
 use llvm_sys::{core::*, execution_engine::{LLVMCreateExecutionEngineForModule, LLVMDisposeExecutionEngine, LLVMGetFunctionAddress, LLVMLinkInMCJIT, LLVMRunFunctionAsMain}, prelude::*, target::{LLVM_InitializeNativeAsmPrinter, LLVM_InitializeNativeTarget}, LLVMBuilder, LLVMContext, LLVMModule};
 
@@ -91,30 +91,34 @@ impl<'a> ModuleContext<'a> {
 		}
 	}
 
-	pub fn compile_typedef(&mut self, typ: &TypedTreeNode) {
-		if let TypedTree::Type(type_info) = &typ.tree {
-			if let Type::Transparent { name, fields, sum_type } = type_info {
-				if !sum_type {
-					unsafe {
-						// let elem_types =
-						// LLVMStructTypeInContext(self.context, ElementTypes, ElementCount, Packed)
-						// TODO: Probably can use add alias to name a struct type?
-						// LLVMAddAlias2(self., ValueTy, AddrSpace, Aliasee, Name)
-					}
-					todo!()
-				} else {
-					todo!()
-				}
-			} else {
-				unreachable!()
-			}
-		} else {
-			unreachable!();
-		}
-	}
+	// pub fn compile_typedef(&mut self, typ: &TypedTreeNode) {
+	// 	if let TypedTree::Type(type_info) = &typ.tree {
+	// 		if let Type::Transparent { name, fields, sum_type } = type_info {
+	// 			if !sum_type {
+	// 				unsafe {
+	// 					// let agg_elem_types = fields.iter().map(|(fname, ftype)| self.llvm_type(ftype))
+	// 					// let agg_type = LLVMStructCreateNamed(ctx, cstr!("agg\0"));
+	// 					// LLVMStructSetBody(agg_type, agg_elem_types.as_mut_ptr(), 3, LLVM_FALSE);
+
+	// 					// let elem_types =
+	// 					// LLVMStructTypeInContext(self.context, ElementTypes, ElementCount, Packed)
+	// 					// TODO: Probably can use add alias to name a struct type?
+	// 					// LLVMAddAlias2(self., ValueTy, AddrSpace, Aliasee, Name)
+	// 				}
+	// 				todo!()
+	// 			} else {
+	// 				todo!()
+	// 			}
+	// 		} else {
+	// 			unreachable!()
+	// 		}
+	// 	} else {
+	// 		unreachable!();
+	// 	}
+	// }
 
 	/// Returns the LLVM LLVMTypeRef for the passed-in tower type
-	pub fn llvm_type(&mut self, ty: Type) -> LLVMTypeRef {
+	pub fn llvm_type(&mut self, ty: &Type) -> LLVMTypeRef {
 		let res: LLVMTypeRef = unsafe { match ty {
 			Type::Opaque { size, kind } => {
 				match kind {
@@ -146,9 +150,15 @@ impl<'a> ModuleContext<'a> {
 				}
 			},
 			Type::Transparent { name, fields, sum_type } => {
-				todo!() // TODO
-				// LLVMStructTypeInContext
-				// Unions?
+				if !sum_type {
+					let mut agg_elem_types: Vec<LLVMTypeRef> = fields.iter().map(|(_, ftype)| self.llvm_type(ftype)).collect();
+					let cname = CString::new(name.as_bytes()).unwrap().into_bytes_with_nul();
+					let agg_type = LLVMStructCreateNamed(self.context, cstr!(cname));
+					LLVMStructSetBody(agg_type, agg_elem_types.as_mut_ptr(), 3, LLVM_FALSE);
+					agg_type
+				} else {
+					todo!()
+				}
 			},
 			Type::Reference { to: _ } => LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC),
 			Type::Generic { name: _ } => unreachable!(),
@@ -226,9 +236,9 @@ pub fn compile_test_program() {
 			LLVMPointerTypeInContext(ctx, LLVM_ADDRESS_SPACE_GENERIC)
 		];
 		let mainfn_ty = LLVMFunctionType(LLVMInt32TypeInContext(ctx), mainfn_params.as_mut_ptr(), 2, LLVM_FALSE);
-		let mainfn = LLVMAddFunction(module, "main\0".as_ptr() as *const i8, mainfn_ty);
+		let mainfn = LLVMAddFunction(module, cstr!("main\0"), mainfn_ty);
 
-		let block = LLVMAppendBasicBlockInContext(ctx, mainfn, "entry\0".as_ptr() as *const i8);
+		let block = LLVMAppendBasicBlockInContext(ctx, mainfn, cstr!("entry\0"));
 		LLVMPositionBuilderAtEnd(builder, block);
 
 		let agg_x20_ty = LLVMArrayType2(agg_type, 20);
@@ -238,26 +248,30 @@ pub fn compile_test_program() {
 		let mut gep_indices = [
 			LLVMConstInt(LLVMInt32TypeInContext(ctx), 0, LLVM_FALSE),
 		];
-		let argv_first_ptr = LLVMBuildGEP2(builder, LLVMPointerTypeInContext(ctx, LLVM_ADDRESS_SPACE_GENERIC), argv_vals, gep_indices.as_mut_ptr(), 1, "argv_first_ptr\0".as_ptr() as *const i8);
-		let argv_first_val = LLVMBuildLoad2(builder, LLVMPointerTypeInContext(ctx, LLVM_ADDRESS_SPACE_GENERIC), argv_first_ptr, "argv_first\0".as_ptr() as *const i8);
+		let argv_first_ptr = LLVMBuildGEP2(builder, LLVMPointerTypeInContext(ctx, LLVM_ADDRESS_SPACE_GENERIC), argv_vals, gep_indices.as_mut_ptr(), 1, cstr!("argv_first_ptr\0"));
+		let argv_first_val = LLVMBuildLoad2(builder, LLVMPointerTypeInContext(ctx, LLVM_ADDRESS_SPACE_GENERIC), argv_first_ptr, cstr!("argv_first\0"));
 		let mut puts_args = [
 			argv_first_val
 		];
-		let _puts_res = LLVMBuildCall2(builder, puts_ty, puts, puts_args.as_mut_ptr(), 1, "puts_ret\0".as_ptr() as *const i8);
+		let _puts_res = LLVMBuildCall2(builder, puts_ty, puts, puts_args.as_mut_ptr(), 1, cstr!("puts_ret\0"));
 
 		let mut gep_indices = [
 			LLVMConstInt(LLVMInt32TypeInContext(ctx), 1, LLVM_FALSE),
 		];
-		let argv_second_ptr = LLVMBuildGEP2(builder, LLVMPointerTypeInContext(ctx, LLVM_ADDRESS_SPACE_GENERIC), argv_vals, gep_indices.as_mut_ptr(), 1, "argv_second_ptr\0".as_ptr() as *const i8);
-		let argv_second_val = LLVMBuildLoad2(builder, LLVMPointerTypeInContext(ctx, LLVM_ADDRESS_SPACE_GENERIC), argv_second_ptr, "argv_second\0".as_ptr() as *const i8);
+		let argv_second_ptr = LLVMBuildGEP2(builder, LLVMPointerTypeInContext(ctx, LLVM_ADDRESS_SPACE_GENERIC), argv_vals, gep_indices.as_mut_ptr(), 1, cstr!("argv_second_ptr\0"));
+		let argv_second_val = LLVMBuildLoad2(builder, LLVMPointerTypeInContext(ctx, LLVM_ADDRESS_SPACE_GENERIC), argv_second_ptr, cstr!("argv_second\0"));
 		let mut printf_args = [
 			argv_second_val
 		];
-		let _printf_res = LLVMBuildCall2(builder, printf_ty, printf, printf_args.as_mut_ptr(), 1, "printf_ret\0".as_ptr() as *const i8);
+		let _printf_res = LLVMBuildCall2(builder, printf_ty, printf, printf_args.as_mut_ptr(), 1, cstr!("printf_ret\0"));
 
 		let lhs = LLVMConstInt(LLVMInt32TypeInContext(ctx), 42, LLVM_FALSE);
 		let rhs = LLVMGetParam(mainfn, 0);
-		let result = LLVMBuildAdd(builder, lhs, rhs, "result\0".as_ptr() as *const i8);
+		let result = LLVMBuildAdd(builder, lhs, rhs, cstr!("result\0"));
+
+		// LLVMParseIRInContext // TODO: Try using this to read an IR stub into a module?
+
+		// LLVMAddGlobalMapping // Need to use this to link functions between modules. Need to declare the function in the module that is trying to call it first of course
 
 		LLVMBuildRet(builder, result);
 
@@ -280,10 +294,10 @@ pub fn compile_test_program() {
 		};
 
 		let argv = [
-			"Hello\0".as_ptr() as *const i8, " world\n\0".as_ptr() as *const i8
+			cstr!("Hello\0"), cstr!(" world\n\0")
 		];
 		let env = [
-			"Environment?\0".as_ptr() as *const i8
+			cstr!("Environment?\0")
 		];
 		let ret = LLVMRunFunctionAsMain(ee, mainfn, 2, argv.as_ptr(), env.as_ptr());
 
