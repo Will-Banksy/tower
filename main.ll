@@ -82,10 +82,7 @@ define void @__spadd(i8** %bp_ptr, i8** %sp_ptr, i8** %ep_ptr, i64 %inc) {
 	%spi = ptrtoint i8* %sp to i64
 	%epi = ptrtoint i8* %ep to i64
 	%space_left = sub i64 %epi, %spi
-	%enough_space = icmp ule i64 %space_left, %inc ; This should be ugt, but ule for testing realloc
-
-	; %println_uint_fmt_strp = getelementptr [4 x i8], [4 x i8]* @println_uint_fmt_str, i64 0, i64 0
-	; %printf_ret = call i32 (i8*, ...) @printf(i8* %println_uint_fmt_strp, i1 %enough_space)
+	%enough_space = icmp ugt i64 %space_left, %inc
 
 	br i1 %enough_space, label %spadd-ret, label %spadd-realloc
 

@@ -6,8 +6,8 @@ use error::{RuntimeError, RuntimeErrorKind};
 
 use crate::analyser::{tree::{TypedTree, TypedTreeNode}, ttype::Type, value::{Value, ValueInner}};
 
-pub fn interp(typed_tree: TypedTreeNode, builtins: &im::OrdMap<String, BuiltinWord>) -> Result<Vec<Value>, RuntimeError> {
-	match typed_tree.tree {
+pub fn interp(typed_tree: &TypedTreeNode, builtins: &im::OrdMap<String, BuiltinWord>) -> Result<Vec<Value>, RuntimeError> {
+	match &typed_tree.tree {
 		TypedTree::Module { name: _, elems } => {
 			let fns: im::OrdMap<String, TypedTreeNode> = elems.iter().filter_map(|(name, e)| if let TypedTree::Function { name: _, effect: _, body: _ } = e.tree { Some((name.clone(), e.clone())) } else { None }).collect();
 			let types: im::OrdMap<String, Type> = elems.iter().filter_map(|(name, e)| if let TypedTree::Type(t) = &e.tree { Some((name.clone(), t.clone())) } else { None }).collect();

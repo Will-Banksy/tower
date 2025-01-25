@@ -1,0 +1,22 @@
+struct Point {
+	x: u32
+	y: u32
+}
+
+struct AnnotatedPoint {
+	p: Point
+	tag: u8
+}
+
+struct OptionalU32 {
+	present: bool
+	value: u32
+}
+
+fn ps {
+	__hello
+}
+
+fn main {
+	ps
+}

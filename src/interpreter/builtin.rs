@@ -51,6 +51,14 @@ pub fn builtin_functions() -> im::OrdMap<String, BuiltinWord> {
 				Ok(())
 			}) as BuiltinWordFn,
 			StackEffect::new_popped(im::vector![Type::new_uint(32)])
+		).into(),
+		"__hello".into() => (
+			Rc::new(|typed_tree: &TypedTreeNode, fns: &im::OrdMap<String, TypedTreeNode>, types: &im::OrdMap<String, Type>, builtins: &im::OrdMap<String, BuiltinWord>, stack: &mut Vec<Value>| -> Result<(), RuntimeError> {
+				println!("Hello from tower interpreter");
+
+				Ok(())
+			}) as BuiltinWordFn,
+			StackEffect::none()
 		).into()
 	}
 		// "call".into() => (

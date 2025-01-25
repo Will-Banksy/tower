@@ -1,15 +1,14 @@
 use tower::{analyser::{self, tree::{TypedTree, TypedTreeNode}}, compiler, interpreter::{builtin::builtin_functions, interp}, parser::{self, result::ScanResult, scanner::Scanner, tree::{ParseTree, ParseTreeNode}}};
 
 fn main() {
-	compiler::compile_test_program();
+	// compiler::compile_test_program();
+	// return;
 
-	return;
-
-	let towercode = include_str!("../main.tower");
+	let towercode = include_str!("../compilerdev.tower");
 	// let tokens = tokenise(towercode).unwrap();
 	// println!("TOKENS: {:?}", tokens);
 
-	let mut scanner = Scanner::new(&towercode, "main.tower");
+	let mut scanner = Scanner::new(&towercode, "compilerdev.tower");
 	let parse_tree = match parser::parse(&mut scanner) {
 		ScanResult::Valid(tree) => tree,
 		ScanResult::WithErr(e) => {
@@ -44,7 +43,7 @@ fn main() {
 
 	println!("\n=== STARTING INTERPRETER ===\n");
 
-	let stack = match interp(typed_tree, &builtin_words) {
+	let stack = match interp(&typed_tree, &builtin_words) {
 		Ok(stack) => stack,
 		Err(e) => {
 			e.print_error(&scanner, "main.tower", std::io::stderr()).unwrap();
@@ -57,6 +56,10 @@ fn main() {
 	println!("Stack len: {}", stack.len());
 
 	println!("Stack: [{}]", stack.iter().map(|v| format!("{v}")).collect::<Vec<String>>().join(", "));
+
+	println!("\n=== LLVM OUTPUT ===\n");
+
+	compiler::compile(typed_tree);
 
 	// let effects = analyse(&mut ast, &mut node_id).unwrap();
 

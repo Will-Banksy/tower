@@ -1,6 +1,7 @@
-use std::{ffi::{CStr, CString}, marker::PhantomData, mem};
+use std::{collections::BTreeMap, ffi::{CStr, CString}, marker::PhantomData, mem};
 
-use llvm_sys::{core::*, execution_engine::{LLVMCreateExecutionEngineForModule, LLVMDisposeExecutionEngine, LLVMGetFunctionAddress, LLVMLinkInMCJIT, LLVMRunFunctionAsMain}, prelude::*, target::{LLVM_InitializeNativeAsmPrinter, LLVM_InitializeNativeTarget}, LLVMBuilder, LLVMContext, LLVMModule};
+use im::OrdMap;
+use llvm_sys::{core::*, error_handling::{LLVMEnablePrettyStackTrace, LLVMInstallFatalErrorHandler}, execution_engine::{LLVMCreateExecutionEngineForModule, LLVMDisposeExecutionEngine, LLVMGetFunctionAddress, LLVMLinkInMCJIT, LLVMRunFunctionAsMain}, ir_reader::LLVMParseIRInContext, prelude::*, target::{LLVM_InitializeNativeAsmPrinter, LLVM_InitializeNativeTarget}, LLVMBuilder, LLVMContext, LLVMModule};
 
 use crate::analyser::{tree::{TypedTree, TypedTreeNode}, ttype::{OpaqueTypeKind, Type}};
 
@@ -10,13 +11,19 @@ const LLVM_TRUE: i32 = 1;
 const LLVM_STATUS_SUCCESS: i32 = 0;
 
 macro_rules! cstr {
-	($rust_str: expr) => {
+	($rust_str: literal) => {
 		$rust_str.as_ptr() as *const i8
 	};
 }
 
-struct CompiledProgram {
-	context: *mut LLVMContext
+macro_rules! cstrv {
+	($rust_str: expr) => {
+		CString::new($rust_str.as_bytes()).unwrap().into_bytes_with_nul().as_ptr() as *const i8
+	};
+}
+
+pub struct CompiledProgram {
+	context: *mut LLVMContext,
 }
 
 impl CompiledProgram {
@@ -31,38 +38,107 @@ impl Drop for CompiledProgram {
 	fn drop(&mut self) {
 		unsafe {
 			LLVMContextDispose(self.context);
+			LLVMShutdown();
 		}
 	}
 }
 
 struct CompileContext {
-	pub context: *mut LLVMContext,
-	pub builder: *mut LLVMBuilder
+	pub context: LLVMContextRef,
+	pub builder: LLVMBuilderRef,
+	pub builtins: BTreeMap<String, LLVMValueRef>
 }
 
 impl CompileContext {
+	extern "C" fn error_handler(reason: *const std::ffi::c_char) {
+		let reason = unsafe {
+			CStr::from_ptr(reason).to_str().unwrap()
+		};
+		eprintln!("LLVM Fatal Error: {reason}");
+	}
+
 	pub fn new() -> Self {
 		let (context, builder) = unsafe {
 			let context = LLVMContextCreate();
 			let builder = LLVMCreateBuilderInContext(context);
+
+			LLVMEnablePrettyStackTrace();
+			LLVMInstallFatalErrorHandler(Some(CompileContext::error_handler));
+
 			(context, builder)
 		};
 
 		CompileContext {
 			context,
-			builder
+			builder,
+			builtins: BTreeMap::new()
+		}
+	}
+
+	pub fn add_builtin(&mut self) {
+		let builtin = include_bytes!("../builtin.bc");
+		let cbuiltin = builtin.as_ptr() as *const i8;
+
+		unsafe {
+			let buf = LLVMCreateMemoryBufferWithMemoryRange(cbuiltin, builtin.len(), cstr!("builtin_ir\0"), LLVM_TRUE);
+			let mut builtin_module = LLVMModuleCreateWithNameInContext(cstr!("builtin\0"), self.context);
+			let mut out_msg = mem::zeroed();
+
+			if LLVMParseIRInContext(self.context, buf, &mut builtin_module, &mut out_msg) != 0 {
+				eprintln!("Failed to add builtin module: {}", CStr::from_ptr(out_msg).to_str().unwrap());
+			}
+
+			// Collect all functions that are defined in the builtin module
+			let mut f = LLVMGetFirstFunction(builtin_module);
+			// let mut fbody = LLVMGetFirstBasicBlock(f); // Can check if this returns a nullptr or not to check whether the function has a body or not
+			if f != std::ptr::null_mut() {
+				let cfnname = LLVMGetValueName2(f, &mut 10);
+				let fnname = CStr::from_ptr(cfnname).to_str().unwrap();
+				if fnname.starts_with("__") { // Only want tower builtins - Which all start with __
+					self.builtins.insert(fnname.to_string(), f);
+					eprintln!("Collected {fnname} from builtin module");
+				}
+			}
+			loop {
+				f = LLVMGetNextFunction(f);
+				if f != std::ptr::null_mut() {
+					let cfnname = LLVMGetValueName2(f, &mut 10);
+					let fnname = CStr::from_ptr(cfnname).to_str().unwrap();
+					if fnname.starts_with("__") {
+						self.builtins.insert(fnname.to_string(), f);
+						eprintln!("Collected {fnname} from builtin module");
+					}
+				} else {
+					break;
+				}
+			}
 		}
 	}
 
 	pub fn create_module<'a>(&'a self, name: &str) -> ModuleContext<'a> {
-		let module = unsafe {
-			LLVMModuleCreateWithNameInContext(cstr!(name), self.context)
-		};
-		ModuleContext {
-			context: self.context,
-			builder: self.builder,
-			module,
-			_lifetime: PhantomData
+		unsafe {
+			let module = LLVMModuleCreateWithNameInContext(cstrv!(name), self.context);
+
+			// Declare all builtin functions in the new module, and pass those function values to the ModuleContext // BUG: Causes crashes
+			let mut builtins = BTreeMap::new();
+			for (fnname, fnvalue) in &self.builtins {
+				let fntype = LLVMGlobalGetValueType(*fnvalue);
+				eprint!("\nForward declaring builtin fn {fnname} of LLVM type: ");
+				LLVMDumpType(fntype);
+				eprintln!();
+				let modfnvalue = LLVMAddFunction(module, cstrv!(fnname), fntype);
+				builtins.insert(fnname.clone(), modfnvalue);
+			}
+
+			ModuleContext {
+				context: self.context,
+				builder: self.builder,
+				module,
+				typedefs: BTreeMap::new(),
+				functions: BTreeMap::new(),
+				builtins,
+				_lifetime: PhantomData
+			}
 		}
 	}
 }
@@ -79,43 +155,104 @@ struct ModuleContext<'a> {
 	context: *mut LLVMContext,
 	builder: *mut LLVMBuilder,
 	module: *mut LLVMModule,
+	typedefs: BTreeMap<String, LLVMTypeRef>,
+	functions: BTreeMap<String, (LLVMTypeRef, LLVMValueRef)>,
+	builtins: BTreeMap<String, LLVMValueRef>,
 	_lifetime: PhantomData<&'a ()>
 }
 
 impl<'a> ModuleContext<'a> {
-	pub fn compile_function(&mut self, func: &TypedTreeNode) {
+	pub fn compile_module(&mut self, module: &TypedTreeNode) {
+		if let TypedTree::Module { name: _, elems } = &module.tree {
+			let mut functions_left: Vec<TypedTreeNode> = elems.iter().filter_map(|(_, enode)| if let TypedTree::Function { .. } = enode.tree { Some(enode.clone()) } else { None }).collect();
+
+			while !functions_left.is_empty() {
+				let mut to_remove = Vec::new();
+				for (i, f) in functions_left.iter().enumerate() {
+					if self.compile_function(f) {
+						to_remove.push(i);
+					}
+				}
+				assert_ne!(to_remove.len(), 0);
+				for i in to_remove {
+					functions_left.remove(i);
+				}
+			}
+		}
+	}
+
+	/// Compiles and adds the passed in function to the module, returning true on success and false if other elements that are needed are not
+	/// compiled yet
+	pub fn compile_function(&mut self, func: &TypedTreeNode) -> bool {
 		if let TypedTree::Function { name, effect, body } = &func.tree {
-			todo!()
+			eprintln!("Compiling function: {name}");
+
+			for node in body {
+				if let TypedTree::Word(name) = &node.tree {
+					if !self.functions.contains_key(name) {
+						return false;
+					}
+				}
+			}
+
+			let fntype = self.llvm_type(&Type::Function { name: name.to_string(), effect: effect.clone() });
+			unsafe {
+				let fnvalue = LLVMAddFunction(self.module, cstrv!(name), fntype);
+
+				let block = LLVMAppendBasicBlockInContext(self.context, fnvalue, cstr!("entry\0"));
+				LLVMPositionBuilderAtEnd(self.builder, block);
+
+				let bppv = LLVMGetParam(fnvalue, 0);
+				let sppv = LLVMGetParam(fnvalue, 1);
+				let eppv = LLVMGetParam(fnvalue, 2);
+				let mut bpv = LLVMBuildLoad2(self.builder, LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC), bppv, cstr!("bp\0"));
+				let mut spv = LLVMBuildLoad2(self.builder, LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC), sppv, cstr!("sp\0"));
+				let mut epv = LLVMBuildLoad2(self.builder, LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC), eppv, cstr!("ep\0"));
+
+				for node in body {
+					match &node.tree {
+						TypedTree::Word(word) => {
+							let (wordfn_type, wordfn) = self.functions.get(word).unwrap();
+
+							let mut wordargs = [
+								bppv,
+								sppv,
+								eppv
+							];
+							LLVMBuildCall2(self.builder, *wordfn_type, *wordfn, wordargs.as_mut_ptr(), 3, cstr!("\0"));
+							bpv = LLVMBuildLoad2(self.builder, LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC), bppv, cstr!("bp\0"));
+							spv = LLVMBuildLoad2(self.builder, LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC), sppv, cstr!("sp\0"));
+							epv = LLVMBuildLoad2(self.builder, LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC), eppv, cstr!("ep\0"));
+						},
+						TypedTree::BuiltinWord(word) => {
+							let wordfn = self.builtins.get(word).unwrap();
+							let wordfn_type = LLVMGlobalGetValueType(*wordfn);
+
+							let mut wordargs = [
+								bppv,
+								sppv,
+								eppv
+							];
+							LLVMBuildCall2(self.builder, wordfn_type, *wordfn, wordargs.as_mut_ptr(), 3, cstr!("\0"));
+							bpv = LLVMBuildLoad2(self.builder, LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC), bppv, cstr!("bp\0"));
+							spv = LLVMBuildLoad2(self.builder, LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC), sppv, cstr!("sp\0"));
+							epv = LLVMBuildLoad2(self.builder, LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC), eppv, cstr!("ep\0"));
+						},
+						TypedTree::Literal { ty, value } => todo!(),
+						TypedTree::Constructor { ty, effect } => todo!(),
+						TypedTree::FieldAccess { name } => todo!(),
+						_ => unreachable!()
+					}
+				}
+
+				self.functions.insert(name.to_string(), (fntype, fnvalue));
+
+				true
+			}
 		} else {
 			unreachable!();
 		}
 	}
-
-	// pub fn compile_typedef(&mut self, typ: &TypedTreeNode) {
-	// 	if let TypedTree::Type(type_info) = &typ.tree {
-	// 		if let Type::Transparent { name, fields, sum_type } = type_info {
-	// 			if !sum_type {
-	// 				unsafe {
-	// 					// let agg_elem_types = fields.iter().map(|(fname, ftype)| self.llvm_type(ftype))
-	// 					// let agg_type = LLVMStructCreateNamed(ctx, cstr!("agg\0"));
-	// 					// LLVMStructSetBody(agg_type, agg_elem_types.as_mut_ptr(), 3, LLVM_FALSE);
-
-	// 					// let elem_types =
-	// 					// LLVMStructTypeInContext(self.context, ElementTypes, ElementCount, Packed)
-	// 					// TODO: Probably can use add alias to name a struct type?
-	// 					// LLVMAddAlias2(self., ValueTy, AddrSpace, Aliasee, Name)
-	// 				}
-	// 				todo!()
-	// 			} else {
-	// 				todo!()
-	// 			}
-	// 		} else {
-	// 			unreachable!()
-	// 		}
-	// 	} else {
-	// 		unreachable!();
-	// 	}
-	// }
 
 	/// Returns the LLVM LLVMTypeRef for the passed-in tower type
 	pub fn llvm_type(&mut self, ty: &Type) -> LLVMTypeRef {
@@ -124,7 +261,7 @@ impl<'a> ModuleContext<'a> {
 				match kind {
 					OpaqueTypeKind::Bool => LLVMInt1TypeInContext(self.context),
 					OpaqueTypeKind::UnsignedInt | OpaqueTypeKind::SignedInt => {
-						match size.unwrap() {
+						match size.unwrap() * 8 {
 							8 => LLVMInt8TypeInContext(self.context),
 							16 => LLVMInt16TypeInContext(self.context),
 							32 => LLVMInt32TypeInContext(self.context),
@@ -150,11 +287,17 @@ impl<'a> ModuleContext<'a> {
 				}
 			},
 			Type::Transparent { name, fields, sum_type } => {
+				if self.typedefs.contains_key(name) {
+					return *self.typedefs.get(name).unwrap();
+				}
+
 				if !sum_type {
+					fields.iter().for_each(|(fname, ftype)| { println!("inner ftype of {fname}: {}", ftype.name()); });
 					let mut agg_elem_types: Vec<LLVMTypeRef> = fields.iter().map(|(_, ftype)| self.llvm_type(ftype)).collect();
-					let cname = CString::new(name.as_bytes()).unwrap().into_bytes_with_nul();
-					let agg_type = LLVMStructCreateNamed(self.context, cstr!(cname));
-					LLVMStructSetBody(agg_type, agg_elem_types.as_mut_ptr(), 3, LLVM_FALSE);
+					let agg_type = LLVMStructCreateNamed(self.context, cstrv!(name));
+					LLVMStructSetBody(agg_type, agg_elem_types.as_mut_ptr(), agg_elem_types.len() as u32, LLVM_FALSE);
+					// let agg_type = LLVMStructTypeInContext(self.context, agg_elem_types.as_mut_ptr(), agg_elem_types.len() as u32, LLVM_FALSE);
+					self.typedefs.insert(name.to_string(), agg_type);
 					agg_type
 				} else {
 					todo!()
@@ -171,29 +314,61 @@ impl<'a> ModuleContext<'a> {
 					LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC),
 					LLVMPointerTypeInContext(self.context, LLVM_ADDRESS_SPACE_GENERIC)
 				];
-				LLVMFunctionType(LLVMVoidTypeInContext(self.context), args.as_mut_ptr(), 3, LLVM_TRUE)
+				LLVMFunctionType(LLVMVoidTypeInContext(self.context), args.as_mut_ptr(), 3, LLVM_FALSE)
 			},
 		}};
 
 		res
 	}
+
+	fn dump(&mut self) {
+		unsafe {
+			LLVMDumpModule(self.module);
+		}
+	}
 }
 
-fn compile(typed_tree: TypedTreeNode) -> CompiledProgram {
-	let context = CompileContext::new();
+pub fn compile(typed_tree: TypedTreeNode) -> CompiledProgram {
+	let mut context = CompileContext::new();
 
-	match typed_tree.tree {
-		TypedTree::Module { name, elems } => todo!(),
-		TypedTree::Function { name, effect, body } => todo!(),
-		TypedTree::Type(_) => todo!(),
-		TypedTree::Word(_) => todo!(),
-		TypedTree::BuiltinWord(_) => todo!(),
-		TypedTree::Literal { ty, value } => todo!(),
-		TypedTree::Constructor { ty, effect } => todo!(),
-		TypedTree::FieldAccess { name } => todo!(),
-	}
+	context.add_builtin();
+
+	let mut module = context.create_module("main");
+
+	module.compile_module(&typed_tree);
+
+	module.dump();
 
 	todo!()
+
+	// let mut typelist = Vec::new();
+
+	// if let TypedTree::Module { name: _, elems } = typed_tree.tree {
+	// 	for (ename, enode) in elems {
+	// 		if let TypedTree::Type(ttype) = enode.tree {
+	// 			eprintln!("Collecting LLVM type of {ename}");
+	// 			typelist.push(module.llvm_type(&ttype));
+	// 		}
+	// 	}
+	// }
+
+	// unsafe {
+	// 	let mut mainfn_params = [
+	// 		LLVMInt32TypeInContext(context.context),
+	// 		LLVMPointerTypeInContext(context.context, LLVM_ADDRESS_SPACE_GENERIC)
+	// 	];
+	// 	let mainfn_ty = LLVMFunctionType(LLVMInt32TypeInContext(context.context), mainfn_params.as_mut_ptr(), 2, LLVM_FALSE);
+	// 	let mainfn = LLVMAddFunction(module.module, cstr!("main\0"), mainfn_ty);
+
+	// 	let block = LLVMAppendBasicBlockInContext(context.context, mainfn, cstr!("entry\0"));
+	// 	LLVMPositionBuilderAtEnd(module.builder, block);
+
+	// 	for llvmtype in typelist {
+	// 		let _ = LLVMBuildAlloca(module.builder, llvmtype, cstr!("alloca\0"));
+	// 	}
+
+	// 	LLVMDumpModule(module.module);
+	// }
 }
 
 pub fn compile_test_program() {

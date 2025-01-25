@@ -185,8 +185,8 @@ impl Type {
 					}
 				}
 			},
-			Type::Transparent { name, fields, sum_type } => todo!(), // TODO: All of these
-			Type::Reference { to } => todo!(),
+			Type::Transparent { name, fields: _, sum_type: _ } => name.clone(),
+			Type::Reference { to } => todo!(), // TODO: All of these
 			Type::Generic { name } => todo!(),
 			Type::Function { name, effect } => todo!(),
 		}
